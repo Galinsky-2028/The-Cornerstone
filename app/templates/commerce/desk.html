@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+{% block title %}Exchange administration · The Cornerstone{% endblock %}
+{% block page %}
+<h1>Department of Commerce: the Exchange</h1>
+<p class="prose muted">Verify that State offers are complete, publish them at least 90 days before rankings close, and run the published matching rule. Commerce never scores merit and never sees a ranking before the deadline.</p>
+
+<section class="card"><h2>Offers to verify</h2>
+  {% for o in submitted %}
+  <div class="ballot"><p><a href="/exchange/offers/{{ o.ref }}"><strong>{{ o.ref }}</strong> {{ o.trade }} · {{ o.district }}, {{ o.state_name }}</a></p>
+    <dl class="kv small"><dt>Prohibition</dt><dd>{{ o.prohibition }}</dd><dt>Authority to lift</dt><dd>{{ o.lifting_authority }}</dd><dt>Supervisor</dt><dd>{{ o.supervisor }}</dd><dt>No new harm</dt><dd>{{ o.no_new_harm }}</dd><dt>Objections</dt><dd>{{ o.objections|length }} filed, all answered</dd></dl>
+    <form method="post" action="/commerce/offers/{{ o.ref }}/verify" class="row">{{ csrf_field(request) }}
+      <label>Notes (required to return)<input name="notes"></label>
+      <button class="btn primary" name="decision" value="verified" type="submit">Verified complete</button>
+      <button class="btn" name="decision" value="returned" type="submit">Return to the State</button></form></div>
+  {% else %}<p class="muted">Nothing waiting.</p>{% endfor %}
+</section>
+
+<section class="card"><h2>Verified offers to publish</h2>
+  {% set open_rounds = rounds|selectattr('status', 'equalto', 'open')|list %}
+  {% for o in verified %}
+  <form method="post" action="/commerce/offers/{{ o.ref }}/publish" class="row">{{ csrf_field(request) }}
+    <span><strong>{{ o.ref }}</strong> {{ o.trade }} · {{ o.state_name }}</span>
+    <label>Round<select name="round_id">{% for r in open_rounds %}<option value="{{ r.id }}">{{ r.name }} (closes {{ r.rankings_close.strftime('%d %b %Y') }})</option>{% endfor %}</select></label>
+    <button class="btn primary" type="submit" {% if not open_rounds %}disabled{% endif %}>Publish on the Exchange</button></form>
+  {% else %}<p class="muted">None.</p>{% endfor %}
+</section>
+
+<section class="card" id="rounds"><h2>Matching rounds</h2>
+  <table><tr><th>Round</th><th>Rankings close</th><th class="right">Offers</th><th class="right">Rankings in</th><th class="right">Awaiting member votes</th><th>Status</th><th></th></tr>
+  {% for r in rounds %}<tr><td><a href="/exchange/rounds/{{ r.id }}">{{ r.name }}</a><br><span class="small muted">seed {{ r.random_seed[:12] }}…</span></td><td>{{ r.rankings_close.strftime('%d %b %Y') }}</td>
+    <td class="right">{{ counts[r.id].offers }}</td><td class="right">{{ counts[r.id].rankings }}</td><td class="right">{{ counts[r.id].pending }}</td><td><span class="status {{ r.status }}">{{ r.status }}</span></td>
+    <td>{% if r.status == 'open' %}{% if today >= r.rankings_close %}
+      <form method="post" action="/commerce/rounds/{{ r.id }}/run">{{ csrf_field(request) }}<button class="btn primary small" type="submit">Run the matching</button></form>
+      {% elif is_preview() %}<form method="post" action="/commerce/rounds/{{ r.id }}/run" class="preview-only" data-confirm="Close rankings now and run the matching?">{{ csrf_field(request) }}<button class="btn small" type="submit">Preview: close rankings now and run the matching</button></form>{% endif %}{% endif %}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No rounds yet.</td></tr>{% endfor %}</table>
+  <form method="post" action="/commerce/rounds/new" class="row ballot">{{ csrf_field(request) }}
+    <label>New round name<input name="name" required placeholder="Round 2"></label>
+    <label>Rankings close (at least {{ min_close.strftime('%d %b %Y') }}){% if is_preview() %} <span class="small">· any date in the preview</span>{% endif %}<input type="date" name="rankings_close" required></label>
+    <button class="btn" type="submit">Open the round</button></form>
+  <p class="small muted">The round's random seed is drawn and published when it opens. Ties between associations with the same priority date are broken by SHA-256 of the seed and the association number, which anyone can recompute.</p>
+</section>
+{% endblock %}

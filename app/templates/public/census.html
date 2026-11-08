@@ -1,0 +1,18 @@
+{% extends "layout.html" %}
+{% block title %}Displacement Event Census · The Cornerstone{% endblock %}
+{% block page %}
+<h1>Displacement Event Census</h1>
+<p class="prose">{{ total }} government actions that research identified as possible qualifying events. <strong>The census is a research register.</strong> Under section 2(e) of the Act it creates no certification, no presumption of eligibility and no claim. Any listed or unlisted action may be petitioned, and the Department of Labor decides on the evidence.</p>
+<form method="get" action="/census" class="row card">
+  <label>Search <input name="q" value="{{ q }}" placeholder="coal, salmon, base closure, Florida…"></label>
+  <label>Government <select name="sovereign"><option value="">All</option>{% for s in sovereigns %}<option {% if s == sovereign %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
+  <button class="btn" type="submit">Filter</button>
+</form>
+<p class="muted">{{ events|length }} shown.</p>
+<table>
+  <tr><th>No.</th><th>Event</th><th>Government</th><th>Date</th></tr>
+  {% for e in events %}
+  <tr><td><a href="/census/{{ e.id }}">{{ e.id }}</a></td><td><a href="/census/{{ e.id }}">{{ e.title }}</a><br><span class="census-meta">{{ e.why }}</span></td><td class="small">{{ e.sovereign }}</td><td class="small">{{ e.date }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

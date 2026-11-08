@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+{% block title %}Supervision · The Cornerstone{% endblock %}
+{% block page %}
+<h1>Independent supervision{% if state %} · {{ state }}{% endif %}</h1>
+<p class="prose muted">The supervisor is independent of the association and of anyone active in the market. Material pricing, access, service, safety and exclusion decisions take effect only as you approve, modify or reject them, with reasons published on the compact's record.</p>
+<section class="card"><h2>Compacts supervised</h2>
+  {% for k in compacts %}<p><a href="/exchange/compacts/{{ k.ref }}">{{ k.ref }}</a> · {{ k.association.name }} · {{ k.offer.trade }}, {{ k.offer.district }}</p>{% else %}<p class="muted">None.</p>{% endfor %}
+</section>
+<section class="card"><h2>Requests</h2>
+  {% for d in rows %}
+  <div class="ballot"><h3>{{ d.compact.ref }} · {{ d.kind }} <span class="status {{ d.decision }}">{{ d.decision }}</span></h3>
+    <p>{{ d.request }}</p><p class="small muted">Requested {{ d.created_on.strftime('%d %b %Y') }}</p>
+    {% if d.decision == 'pending' %}
+    <form method="post" action="/supervisor/decisions/{{ d.id }}">{{ csrf_field(request) }}
+      <label>Reasons for the public record<textarea name="reasons" rows="3" required minlength="20"></textarea></label>
+      <button class="btn primary" name="decision" value="approved" type="submit">Approve</button>
+      <button class="btn" name="decision" value="modified" type="submit">Approve as modified</button>
+      <button class="btn danger" name="decision" value="rejected" type="submit">Reject</button></form>
+    {% else %}<p class="small"><strong>Reasons:</strong> {{ d.reasons }}</p>{% endif %}
+  </div>
+  {% else %}<p class="muted">No requests.</p>{% endfor %}
+</section>
+{% endblock %}

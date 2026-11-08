@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+{% block title %}The Act and its documents · The Cornerstone{% endblock %}
+{% block page %}
+<h1>The Act and its documents</h1>
+<div class="grid">
+{% for d in docs %}
+  <section class="card">
+    <h2>{{ d.title }}</h2>
+    <p class="muted">{{ "{:,}".format(d.words) }} words</p>
+    <p>{% if d.readable %}<a class="btn" href="/documents/{{ d.slug }}">Read online</a>{% else %}<a class="btn" href="/census">Browse online</a>{% endif %}
+       <a class="btn" href="/documents/{{ d.slug }}/download">Download (Word)</a></p>
+  </section>
+{% endfor %}
+  <section class="card"><h2>The Cornerstone speech</h2><p class="muted">The policy explained in a campaign address.</p><p><a class="btn" href="/speech">Read the transcript</a></p></section>
+</div>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "layout.html" %}
+{% block title %}Compact negotiation · State{% endblock %}
+{% block page %}
+<p class="small"><a href="/state#matches">← State desk</a></p>
+<h1>{{ m.offer.ref }} {{ m.offer.trade }} ↔ {{ m.association.name }}</h1>
+<p class="muted">Matched in round {{ m.round_id }} · priority date {{ m.priority_date.strftime('%d %b %Y') }} · <span class="status {{ m.status }}">{{ m.status }}</span>{% if m.status == 'negotiating' %} · negotiate by {{ m.negotiation_deadline.strftime('%d %B %Y') }}{% endif %}</p>
+<p class="prose small">The State negotiates only with the matched association and only within the published menu: {{ m.offer.negotiable_terms }}</p>
+
+{% if m.status == 'negotiating' and (not k or k.status == 'drafting') %}
+<form method="post" action="/state/matches/{{ m.id }}/compact" class="card">{{ csrf_field(request) }}
+  <h2>Draft compact{% if k %} {{ k.ref }}{% endif %}</h2>
+  <label>Services the enterprise will provide<textarea name="services" rows="2" required>{{ k.services if k else '' }}</textarea></label>
+  <label>Launch milestones<textarea name="launch_milestones" rows="2" required>{{ k.launch_milestones if k else '' }}</textarea></label>
+  <label>Public protections<textarea name="public_protections" rows="2" required>{{ k.public_protections if k else '' }}</textarea></label>
+  <label>Terms selected from the published menu<textarea name="selected_terms" rows="2">{{ k.selected_terms if k else '' }}</textarea></label>
+  <div class="row">
+    <label>Operative date<input type="date" name="operative_on" required value="{{ k.operative_on.isoformat() if k and k.operative_on else '' }}"></label>
+    <label>Projected annual operating receipts from the feasibility review ($)<input name="projected_annual_receipts" inputmode="numeric" required value="{{ k.projected_annual_receipts if k else '' }}"></label>
+  </div>
+  <p class="small muted">Founding Fund principal actually disbursed to this association: {{ disbursed|money }}. The Fund percentage and maximum obligation are computed by the published formula; they are not negotiated.</p>
+  <button class="btn primary" type="submit">Save the draft</button>
+</form>
+{% endif %}
+
+{% if k %}
+<section class="card"><h2>Compact {{ k.ref }} <span class="status {{ k.status }}">{{ k.status|label }}</span></h2>
+  <dl class="kv">
+    <dt>Exclusive term</dt><dd>{{ k.initial_term_years }} years from the operative date, with one {{ k.renewal_years }}-year renewal while workers keep voting control</dd>
+    <dt>Founding Fund</dt><dd>{{ k.fund_rate_bp|bp }} of quarterly operating receipts until {{ k.fund_max_obligation|money }} is repaid (principal plus a fixed {{ k.fund_return_bp|bp }} return)</dd>
+    <dt>State share</dt><dd>{{ k.surplus_rate_pct }}% of positive shareable surplus</dd>
+  </dl>
+  {% if k.status == 'drafting' and k.services %}
+  <form method="post" action="/state/matches/{{ m.id }}/send">{{ csrf_field(request) }}<button class="btn primary" type="submit">Sign and send to the members' vote</button></form>
+  <p class="small muted">The draft and a statement of conformity are public for {{ public_days }} days. It is executed when a majority of all founding units approve.</p>
+  {% elif k.status == 'member_vote' %}<p>Waiting for the members' vote.</p>
+  {% elif k.status == 'executed' %}<p>Executed {{ k.executed_on.strftime('%d %B %Y') }}. <a href="/exchange/compacts/{{ k.ref }}">Public record</a></p>{% endif %}
+</section>
+{% endif %}
+
+{% if m.status == 'negotiating' %}
+<form method="post" action="/state/matches/{{ m.id }}/fail" class="card danger-zone" data-confirm="End negotiation? The offer returns to the Exchange.">{{ csrf_field(request) }}
+  <h2>Negotiation failed</h2>
+  <p class="small">{% if today <= m.negotiation_deadline %}{% if is_preview() %}Preview: you may end it now. Under the Act, negotiation lasts {{ 180 }} days.{% else %}Available after {{ m.negotiation_deadline.strftime('%d %B %Y') }}.{% endif %}{% endif %}</p>
+  <label>Reasons<textarea name="reasons" rows="2" required></textarea></label>
+  <button class="btn danger" type="submit">Return the offer to the Exchange</button>
+</form>
+{% endif %}
+{% endblock %}

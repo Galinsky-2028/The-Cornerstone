@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+{% block title %}Cornerstone Associations · The Cornerstone{% endblock %}
+{% block page %}
+<h1>Cornerstone Associations</h1>
+<p class="prose">Section 4. Certified workers form an association, which Labor charters. Enrollment then stays open for 180 days. Each certified claim is one founding unit: it cannot be bought, sold, pledged or transferred, and every member's vote counts the same. A roll needs between 2 and 2,500 units.</p>
+
+<section class="card">
+  <h2>Associations</h2>
+  <table><tr><th>Association</th><th>Principal state</th><th>Status</th><th class="right">Units</th><th>Enrollment closes</th><th></th></tr>
+  {% for row in rows %}
+  <tr><td><a href="/app/associations/{{ row.a.ref }}">{{ row.a.ref }} · {{ row.a.name }}</a></td><td>{{ row.a.principal_state }}</td>
+    <td><span class="status {{ row.a.status }}">{{ row.a.status|label }}</span></td><td class="right">{{ row.units }}</td>
+    <td>{{ row.a.enrollment_closes.strftime('%d %b %Y') }}</td>
+    <td>{% if row.a.status == 'enrolling' and free_claims %}
+      <form method="post" action="/app/associations/{{ row.a.ref }}/join" class="row">{{ csrf_field(request) }}
+        <select name="claim_ref" aria-label="Claim to enroll">{% for c in free_claims %}<option value="{{ c.ref }}">{{ c.ref }} ({{ c.event.ref }})</option>{% endfor %}</select>
+        <button class="btn small primary" type="submit">Join</button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">No associations yet.</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section class="card">
+  <h2>Form a new association</h2>
+  {% if free_claims %}
+  <form method="post" action="/app/associations/new">{{ csrf_field(request) }}
+    <div class="row">
+      <label>Name<input name="name" required placeholder="e.g. Ohio Valley Miners Cornerstone Association"></label>
+      <label>Principal state<input name="principal_state" required></label>
+      <label>Your founding claim<select name="claim_ref">{% for c in free_claims %}<option value="{{ c.ref }}">{{ c.ref }} ({{ c.event.ref }} {{ c.event.title }})</option>{% endfor %}</select></label>
+    </div>
+    <label>Purpose<textarea name="purpose" rows="2"></textarea></label>
+    <button class="btn primary" type="submit">File for a charter</button>
+  </form>
+  <p class="small muted">You will sit on the first board. Labor charters the association and opens enrollment.</p>
+  {% else %}
+  <p class="muted">Forming or joining an association needs a certified claim that is not already on a founding roll. <a href="/app/claims/new">File a claim</a>.</p>
+  {% endif %}
+</section>
+{% endblock %}

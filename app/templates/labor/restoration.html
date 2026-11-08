@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+{% block title %}Restoration · {{ a.name }}{% endblock %}
+{% block page %}
+<p class="small"><a href="/labor#restorations">← Labor desk</a></p>
+<h1>Restoration finding: {{ a.name }}</h1>
+<p class="prose">Section 9. A claim is remedied only when the worker has a real path back: every condition below must hold. A provisional finding becomes final, and the members' claims are marked remedied, once financing is secured and operations begin.</p>
+{% if not k %}<p class="notice warn">There is no executed compact yet.</p>{% else %}
+<p>Compact <a href="/exchange/compacts/{{ k.ref }}">{{ k.ref }}</a> · status <span class="status {{ r.status if r else 'pending' }}">{{ r.status if r else 'pending' }}</span></p>
+
+<form method="post" action="/labor/restorations/{{ a.ref }}/provisional" class="card">{{ csrf_field(request) }}
+  <h2>Conditions</h2>
+  {% for key, text in checks.items() %}<label><input type="checkbox" name="{{ key }}" value="1" {% if r and r.checks and r.checks.get(key) %}checked{% endif %} {% if r and r.status == 'remedied' %}disabled{% endif %}> {{ text }}</label>{% endfor %}
+  <label>Findings<textarea name="findings" rows="4">{{ r.findings if r else '' }}</textarea></label>
+  {% if not r or r.status in ['pending', 'reopened', 'provisional'] %}<button class="btn primary" type="submit">Record the findings</button>{% endif %}
+</form>
+
+{% if r and r.status == 'provisional' %}
+<form method="post" action="/labor/restorations/{{ a.ref }}/remedied" class="card next-step">{{ csrf_field(request) }}
+  <h2>Confirm restoration</h2>
+  <label><input type="checkbox" name="financing_secured" value="1"> Financing has been secured</label>
+  <label>Operations began on<input type="date" name="operations_began_on" required></label>
+  <button class="btn primary" type="submit">Mark {{ claims|length }} claims remedied</button>
+</form>
+{% endif %}
+{% if r and r.status in ['provisional', 'remedied'] %}
+<form method="post" action="/labor/restorations/{{ a.ref }}/reopen" class="card danger-zone">{{ csrf_field(request) }}
+  <h2>Reopen</h2><label>Reasons<textarea name="reasons" rows="2" required></textarea></label>
+  <button class="btn danger" type="submit">Reopen the restoration</button></form>
+{% endif %}
+{% endif %}
+<section class="card"><h2>Members' claims</h2>
+  <table><tr><th>Claim</th><th>Event</th><th>Status</th></tr>{% for c in claims %}<tr><td><a href="/labor/claims/{{ c.ref }}">{{ c.ref }}</a></td><td>{{ c.event.ref }}</td><td><span class="status {{ c.status }}">{{ c.status }}</span></td></tr>{% endfor %}</table>
+</section>
+{% endblock %}

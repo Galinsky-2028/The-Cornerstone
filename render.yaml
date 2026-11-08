@@ -1,0 +1,35 @@
+# Render Blueprint. Rename the service for each project. Values marked sync: false are entered in the
+# Render dashboard (or set by Claude through the Render connector) and never stored in this file.
+services:
+  - type: web
+    name: the-cornerstone
+    runtime: docker
+    plan: starter            # free also works for testing, but it sleeps after 15 minutes and cannot send SMTP email
+    region: ohio             # same AWS region as Neon's us-east-2
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_NAME
+        value: The Cornerstone
+      - key: APP_ORGANIZATION
+        value: Galinsky 2028
+      - key: APP_BRAND_COLOR
+        value: "#1f3a5f"
+      - key: APP_REGISTRATION
+        value: open
+      - key: APP_LEGAL_MODE
+        value: preview       # only the first start reads this; afterwards the password-protected switch at /site decides
+      - key: APP_BASE_URL
+        sync: false          # e.g. https://the-cornerstone.onrender.com
+      - key: APP_SECRET_KEY
+        generateValue: true
+      - key: APP_DATABASE_URL
+        sync: false          # Neon pooled connection string
+      - key: APP_DATABASE_URL_DIRECT
+        sync: false          # Neon direct connection string (migrations)
+      - key: APP_ADMIN_EMAIL
+        sync: false
+      - key: APP_ADMIN_PASSWORD
+        sync: false
+      - key: APP_TRUST_PROXY
+        value: "true"

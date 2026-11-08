@@ -1,0 +1,27 @@
+{% extends "layout.html" %}
+{% block title %}Petition for an event · The Cornerstone{% endblock %}
+{% block page %}
+<h1>Petition to certify a displacement event</h1>
+<p class="prose">Section 2 of the Act. Any two affected workers, a union, a State workforce agency, a tribe, or an authorized representative may petition. Your petition is public at once. Anyone may submit evidence for {{ 60 }} days, and the Department of Labor must then decide within 180 days of filing, with written findings.</p>
+{% if census %}<p class="notice">Starting from Census entry <a href="/census/{{ census.id }}">{{ census.id }}: {{ census.title }}</a>. The Census is research, not a certification; your petition must still prove each element.</p>{% endif %}
+<form method="post" class="card">{{ csrf_field(request) }}
+  <input type="hidden" name="census_id" value="{{ census_id }}">
+  <label>Short title<input name="title" required maxlength="300" value="{{ census.title if census else '' }}"></label>
+  <label>Government that acted<input name="sovereign" required value="{{ census.sovereign if census else '' }}"></label>
+  <label>The action: law, rule, order or decision, with its date<textarea name="action" rows="3" required>{{ (census.instrument ~ ' — ' ~ census.action) if census else '' }}</textarea></label>
+  <label>The lawful work it targeted<textarea name="targeted_work" rows="2" required></textarea></label>
+  <label>The workers affected<textarea name="affected_group" rows="2" required>{{ census.group_record if census else '' }}</textarea></label>
+  <label>Evidence that ending or substantially restricting this work was a deliberate purpose or chosen means<textarea name="intent_evidence" rows="4" required>{{ census.why if census else '' }}</textarea></label>
+  <label>The losses you attribute to the action<textarea name="attributed_losses" rows="3" required>{{ census.causation if census else '' }}</textarea></label>
+  <div class="row">
+    <label>Who is petitioning
+      <select name="petitioner_type">
+        <option value="workers">Two or more affected workers</option><option value="union">A union</option>
+        <option value="state_agency">A State workforce agency</option><option value="tribe">A tribe</option>
+        <option value="authorized_representative">An authorized representative</option>
+      </select></label>
+    <label>Petitioner's name as it should appear<input name="petitioner_name"></label>
+  </div>
+  <button class="btn primary" type="submit">File the petition</button>
+</form>
+{% endblock %}

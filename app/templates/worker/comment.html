@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+{% block title %}Respond to {{ e.ref }} · The Cornerstone{% endblock %}
+{% block page %}
+<p class="small"><a href="/exchange/events/{{ e.ref }}">← {{ e.ref }} · {{ e.title }}</a></p>
+<h1>Submit evidence or a response</h1>
+<p class="prose">Everything you submit is published on the event's public record. The evidence period ends {{ e.comment_ends.strftime('%d %B %Y') }}.</p>
+<form method="post" class="card">{{ csrf_field(request) }}
+  <div class="row">
+    <label>Your submission is
+      <select name="position"><option value="evidence">Evidence</option><option value="support">In support</option><option value="oppose">In opposition</option></select></label>
+    <label>Organization, if any<input name="organization"></label>
+  </div>
+  <label>Your submission<textarea name="body" rows="8" required></textarea></label>
+  <button class="btn primary" type="submit">Submit to the public record</button>
+</form>
+{% endblock %}

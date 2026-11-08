@@ -1,0 +1,70 @@
+{% extends "layout.html" %}
+{% block title %}Public Exchange · The Cornerstone{% endblock %}
+{% block page %}
+<h1>The public Exchange</h1>
+<p class="prose muted">Section 5(a) of the Act requires every certification, closed founding roll, offer, matching rule and result, compact, supervision decision and audit summary to be public. Names and other private details of workers are never shown.</p>
+
+<section class="card" id="events">
+  <h2>Event register</h2>
+  <table>
+    <tr><th>Event</th><th>Government</th><th>Status</th><th>First proven separation</th><th class="right">Certified workers</th></tr>
+    {% for e in events %}
+    <tr><td><a href="/exchange/events/{{ e.ref }}">{{ e.ref }} · {{ e.title }}</a>{% if e.census_id %}<br><span class="small muted">Census {{ e.census_id }}</span>{% endif %}</td>
+      <td class="small">{{ e.sovereign }}</td><td><span class="status {{ e.status }}">{{ e.status.replace('_',' ') }}</span></td>
+      <td class="small">{{ e.first_separation.strftime('%d %b %Y') if e.first_separation else '—' }}</td><td class="right">{{ claims_by_event.get(e.id, 0) }}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">No petitions yet.</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section class="card" id="associations">
+  <h2>Cornerstone Associations</h2>
+  <table>
+    <tr><th>Association</th><th>Principal state</th><th>Status</th><th class="right">Founding units</th><th>Events represented</th><th>Priority date</th></tr>
+    {% for row in assocs %}
+    <tr><td>{{ row.a.ref }} · {{ row.a.name }}</td><td>{{ row.a.principal_state }}</td><td><span class="status {{ row.a.status }}">{{ row.a.status.replace('_',' ') }}</span></td>
+      <td class="right">{{ row.units }}</td><td class="small">{{ row.events|join(', ') }}</td><td class="small">{{ row.priority.strftime('%d %b %Y') if row.priority else '—' }}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">No associations yet.</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section class="card" id="offers">
+  <h2>State offers</h2>
+  <table>
+    <tr><th>Offer</th><th>State and district</th><th>Trade</th><th>Status</th></tr>
+    {% for o in offers %}
+    <tr><td><a href="/exchange/offers/{{ o.ref }}">{{ o.ref }}</a></td><td>{{ o.state_name }} · {{ o.district }}</td><td>{{ o.trade }}</td><td><span class="status {{ o.status }}">{{ o.status.replace('_',' ') }}</span></td></tr>
+    {% else %}<tr><td colspan="4" class="muted">No offers yet.</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section class="card" id="rounds">
+  <h2>Matching rounds</h2>
+  <table>
+    <tr><th>Round</th><th>Rankings close</th><th>Status</th></tr>
+    {% for r in rounds %}<tr><td><a href="/exchange/rounds/{{ r.id }}">{{ r.name }}</a></td><td>{{ r.rankings_close.strftime('%d %b %Y') }}</td><td><span class="status {{ r.status }}">{{ r.status }}</span></td></tr>
+    {% else %}<tr><td colspan="3" class="muted">No rounds yet.</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section class="card" id="compacts">
+  <h2>Executed compacts</h2>
+  <table>
+    <tr><th>Compact</th><th>Association</th><th>Offer</th><th>Operative from</th></tr>
+    {% for c in compacts %}<tr><td><a href="/exchange/compacts/{{ c.ref }}">{{ c.ref }}</a></td><td>{{ c.association.name }}</td><td>{{ c.offer.trade }} · {{ c.offer.district }}, {{ c.offer.state_name }}</td><td>{{ c.operative_on.strftime('%d %b %Y') if c.operative_on else '—' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">No compacts yet.</td></tr>{% endfor %}
+  </table>
+</section>
+
+<div class="grid">
+<section class="card" id="supervision">
+  <h2>Supervision decisions</h2>
+  {% for d in decisions %}<p class="small"><strong>{{ compact_refs.get(d.compact_id) }}</strong> · {{ d.kind }} · <span class="status {{ d.decision }}">{{ d.decision }}</span><br>{{ d.reasons }}</p>
+  {% else %}<p class="muted">None yet.</p>{% endfor %}
+</section>
+<section class="card" id="audits">
+  <h2>Quarterly reports</h2>
+  {% for r in reports %}<p class="small"><strong>{{ compact_refs.get(r.compact_id) }}</strong> {{ r.quarter }}: receipts ${{ "{:,}".format(r.operating_receipts) }}; Fund repayment ${{ "{:,}".format(r.fund_remittance) }}; State land account ${{ "{:,}".format(r.state_share) }}</p>
+  {% else %}<p class="muted">None yet.</p>{% endfor %}
+</section>
+</div>
+{% endblock %}

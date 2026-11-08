@@ -1,0 +1,6 @@
+{% extends "layout.html" %}
+{% block title %}{{ doc.title }} · The Cornerstone{% endblock %}
+{% block page %}
+<p class="small"><a href="/documents">← All documents</a> · <a href="/documents/{{ doc.slug }}/download">Download this document (Word)</a></p>
+<article class="card prose">{{ text|markdown|safe }}</article>
+{% endblock %}

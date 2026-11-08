@@ -1,0 +1,47 @@
+{% extends "layout.html" %}
+{% block title %}Department of Labor · The Cornerstone{% endblock %}
+{% block page %}
+<h1>Department of Labor desk</h1>
+<p class="prose muted">Certify displacement events, decide individual claims and hearings, charter associations, run the Revolving Founding Fund, and find restoration.</p>
+
+<section class="card" id="events"><h2>Event petitions</h2>
+  <table><tr><th>Petition</th><th>Status</th><th>Evidence closes</th><th>Decision due</th></tr>
+  {% for e in events %}<tr><td><a href="/labor/events/{{ e.ref }}">{{ e.ref }} · {{ e.title }}</a></td><td><span class="status {{ e.status }}">{{ e.status|label }}</span></td>
+    <td>{{ e.comment_ends.strftime('%d %b %Y') }}</td><td>{{ e.decision_due.strftime('%d %b %Y') }}{% if e.decision_due < today %} <strong class="check-fail">overdue</strong>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">Nothing waiting.</td></tr>{% endfor %}</table>
+</section>
+
+<section class="card" id="claims"><h2>Claims to decide</h2>
+  <table><tr><th>Claim</th><th>Worker</th><th>Event</th><th>Filed</th></tr>
+  {% for c in claims %}<tr><td><a href="/labor/claims/{{ c.ref }}">{{ c.ref }}</a></td><td>{{ c.worker_name }} · {{ c.occupation }}</td><td>{{ c.event.ref }}</td><td>{{ c.filed_on.strftime('%d %b %Y') }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">Nothing waiting.</td></tr>{% endfor %}</table>
+</section>
+
+<section class="card" id="hearings"><h2>Hearings requested</h2>
+  {% for c in hearings %}<p><a href="/labor/claims/{{ c.ref }}">{{ c.ref }} · {{ c.worker_name }}</a>: {{ c.hearing_request }}</p>{% else %}<p class="muted">None.</p>{% endfor %}
+</section>
+
+<section class="card" id="associations"><h2>Charters requested</h2>
+  {% for a in chartering %}
+  <div class="ballot"><p><strong>{{ a.ref }} · {{ a.name }}</strong> ({{ a.principal_state }}, {{ charter_units[a.id] }} founding unit so far)<br>{{ a.purpose }}</p>
+    <form method="post" action="/labor/associations/{{ a.ref }}/charter" class="row">{{ csrf_field(request) }}
+      <label>Reasons if refused<input name="reasons"></label>
+      <button class="btn primary" name="decision" value="approve" type="submit">Grant the charter and open enrollment</button>
+      <button class="btn danger" name="decision" value="refuse" type="submit">Refuse</button></form></div>
+  {% else %}<p class="muted">None.</p>{% endfor %}
+</section>
+
+<section class="card" id="fund"><h2>Revolving Founding Fund</h2>
+  <table><tr><th>Association</th><th>Purpose</th><th>Provider</th><th class="right">Amount</th><th>Status</th><th></th></tr>
+  {% for f in advances %}<tr><td>{{ f.association.ref }}</td><td>{{ fund_categories.get(f.category, f.category) }}<br><span class="small muted">{{ f.description }}</span></td><td>{{ f.provider }}</td><td class="right">{{ f.amount|money }}</td>
+    <td><span class="status {{ f.status }}">{{ f.status }}</span></td>
+    <td><form method="post" action="/labor/fund/{{ f.id }}" class="row">{{ csrf_field(request) }}
+      {% if f.status == 'requested' %}<button class="btn small primary" name="action" value="approve" type="submit">Approve</button><button class="btn small danger" name="action" value="reject" type="submit">Reject</button>
+      {% else %}<button class="btn small primary" name="action" value="disburse" type="submit">Pay the provider</button>{% endif %}</form></td></tr>
+  {% else %}<tr><td colspan="6" class="muted">Nothing waiting.</td></tr>{% endfor %}</table>
+</section>
+
+<section class="card" id="restorations"><h2>Restoration</h2>
+  {% for r in restorations %}<p><a href="/labor/restorations/{{ r.association.ref }}">{{ r.association.ref }} · {{ r.association.name }}</a> <span class="status {{ r.status }}">{{ r.status }}</span></p>{% else %}<p class="muted">No association has an executed compact yet.</p>{% endfor %}
+</section>
+{% endblock %}

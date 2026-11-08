@@ -1,0 +1,12 @@
+{% extends "layout.html" %}
+{% block title %}Object to {{ o.ref }} · The Cornerstone{% endblock %}
+{% block page %}
+<p class="small"><a href="/exchange/offers/{{ o.ref }}">← {{ o.ref }} · {{ o.trade }}</a></p>
+<h1>Object to offer {{ o.ref }}</h1>
+<p class="prose">If this offer would take or impair a lawful job, license, contract, customer relationship, pending application or queue position, or an existing market, including remote or cross-border supply, say how. The State must answer on the public record before it can submit the offer, and a failure of the test bars the offer. Objections close {{ o.objection_ends.strftime('%d %B %Y') }}.</p>
+<form method="post" class="card">{{ csrf_field(request) }}
+  <label>Your name or organization<input name="author_name"></label>
+  <label>Your objection and evidence<textarea name="body" rows="8" required></textarea></label>
+  <button class="btn primary" type="submit">File the objection</button>
+</form>
+{% endblock %}

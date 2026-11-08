@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+{% block title %}{{ o.ref if o else 'New offer' }} · State{% endblock %}
+{% block page %}
+<p class="small"><a href="/state">← State offers</a>{% if o and o.status != 'draft' %} · <a href="/exchange/offers/{{ o.ref }}">Public record</a>{% endif %}</p>
+<h1>{% if o %}Offer {{ o.ref }} <span class="status {{ o.status }}">{{ o.status|label }}</span>{% else %}Draft a new offer{% endif %}</h1>
+{% if o and o.verification_notes %}<p class="notice warn">Commerce: {{ o.verification_notes }}</p>{% endif %}
+
+<form method="post" action="{{ '/state/offers/' ~ o.ref if o else '/state/offers/new' }}" class="card">{{ csrf_field(request) }}
+  {% if not state %}<label>State<input name="state_name" required></label>{% else %}<p><strong>State:</strong> {{ state }}</p>{% endif %}
+  {% macro field(name, label, rows=2, help='') %}
+    <label>{{ label }}{% if help %} <span class="small">({{ help }})</span>{% endif %}
+    {% if rows == 0 %}<input name="{{ name }}" value="{{ o[name] if o else '' }}" {% if not editable %}disabled{% endif %}>
+    {% else %}<textarea name="{{ name }}" rows="{{ rows }}" {% if not editable %}disabled{% endif %}>{{ o[name] if o else '' }}</textarea>{% endif %}</label>
+  {% endmacro %}
+  <div class="row">{{ field('district', 'District', 0) }}{{ field('trade', 'Trade', 0) }}</div>
+  {{ field('prohibition', 'The precise prohibition now in force', 3, 'it must close the trade to every private person in the district') }}
+  {{ field('lifting_authority', 'Authority to lift it for the compact holder only', 2) }}
+  {{ field('enabling_law', 'State enabling law', 0) }}
+  {{ field('technical_requirements', 'Neutral technical requirements', 2) }}
+  {{ field('obligations', 'Regulatory and tax obligations', 2) }}
+  {{ field('supervisor', 'Independent supervisor', 0) }}
+  {{ field('negotiable_terms', 'Bounded menu of negotiable commercial terms', 3) }}
+  {{ field('federal_authorization', 'Federal authorization, if a federal prohibition applies', 2) }}
+  <div class="row">
+    <label>State surplus share (% of positive surplus, fixed by general law)<input name="surplus_rate_pct" inputmode="numeric" value="{{ o.surplus_rate_pct if o else 3 }}" {% if not editable %}disabled{% endif %}></label>
+    <label>Most founding units this enterprise can serve<input name="max_founding_units" inputmode="numeric" value="{{ o.max_founding_units if o else 2500 }}" {% if not editable %}disabled{% endif %}></label>
+  </div>
+  <label>No-new-harm record <span class="small">(after the objection period: that the offer takes or impairs no existing lawful job, license, contract, customer relationship, application, queue position or market; lawful remote and cross-border supply, public employment, and tribal, treaty and property rights examined)</span>
+    <textarea name="no_new_harm" rows="4" {% if o and o.status not in ['draft', 'objection_period'] %}disabled{% endif %}>{{ o.no_new_harm if o else '' }}</textarea></label>
+  {% if not o or o.status in ['draft', 'objection_period'] %}<button class="btn primary" type="submit">Save</button>{% endif %}
+</form>
+
+{% if o %}
+{% if o.status == 'draft' %}
+<section class="card next-step"><h2>Open for objections</h2>
+  {% if missing %}<p class="small">Still missing: {{ missing|join(', ') }}.</p>{% endif %}
+  <p>Publishing starts at least 60 days in which anyone may object and submit contrary evidence. Notify every potentially affected right holder directly.</p>
+  <form method="post" action="/state/offers/{{ o.ref }}/open-objections">{{ csrf_field(request) }}<button class="btn primary" type="submit" {% if missing %}disabled{% endif %}>Publish for objections</button></form>
+</section>
+{% endif %}
+{% if o.status == 'objection_period' %}
+<section class="card" id="objections"><h2>Objections</h2>
+  <p>The objection period ends {{ o.objection_ends.strftime('%d %B %Y') }}. Every objection needs a finding on the record. Any failure of the no-new-harm test bars the offer; paying an incumbent does not cure it.</p>
+  {% for ob in objections %}
+  <div class="ballot"><p><strong>{{ ob.author_name }}:</strong> {{ ob.body }}</p>
+    {% if ob.resolution %}<p class="small"><strong>Finding:</strong> {{ ob.resolution }}</p>{% else %}
+    <form method="post" action="/state/objections/{{ ob.id }}/resolve">{{ csrf_field(request) }}<label>Finding<textarea name="resolution" rows="2" required></textarea></label><button class="btn small" type="submit">Record the finding</button></form>{% endif %}
+  </div>
+  {% else %}<p class="muted">No objections filed.</p>{% endfor %}
+  <div class="row">
+    {% if today < o.objection_ends and is_preview() %}<form method="post" action="/state/offers/{{ o.ref }}/end-objections" class="preview-only">{{ csrf_field(request) }}<button class="btn" type="submit">Preview: end the objection period now</button></form>{% endif %}
+    <form method="post" action="/state/offers/{{ o.ref }}/submit">{{ csrf_field(request) }}<button class="btn primary" type="submit">Submit to Commerce</button></form>
+  </div>
+</section>
+{% elif objections %}
+<section class="card" id="objections"><h2>Objections and findings</h2>{% for ob in objections %}<p><strong>{{ ob.author_name }}:</strong> {{ ob.body }}<br><span class="small"><strong>Finding:</strong> {{ ob.resolution }}</span></p>{% endfor %}</section>
+{% endif %}
+{% if o.status not in ['matched', 'compacted', 'withdrawn'] %}
+<form method="post" action="/state/offers/{{ o.ref }}/withdraw" data-confirm="Withdraw this offer? Rankings of it become void." class="card danger-zone">{{ csrf_field(request) }}<button class="btn danger" type="submit">Withdraw the offer</button></form>
+{% endif %}
+{% endif %}
+{% endblock %}

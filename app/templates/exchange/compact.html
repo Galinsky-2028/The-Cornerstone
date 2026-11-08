@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block title %}Compact {{ c.ref }} · Exchange{% endblock %}
+{% block page %}
+<p class="small"><a href="/exchange#compacts">← Compacts</a></p>
+<h1>Compact {{ c.ref }}</h1>
+<p class="muted">{{ c.association.name }} ({{ units }} founding units) · {{ c.offer.trade }} · {{ c.offer.district }}, {{ c.offer.state_name }}</p>
+<section class="card"><dl class="kv">
+  <dt>Executed</dt><dd>{{ c.executed_on.strftime('%d %B %Y') if c.executed_on }}</dd>
+  {% if dates %}<dt>Exclusive term</dt><dd>{{ dates.operative.strftime('%d %b %Y') }} to {{ dates.initial_end.strftime('%d %b %Y') }}; renewal to {{ dates.renewal_end.strftime('%d %b %Y') }} while the workers keep voting control. No further exclusive renewal.</dd>{% endif %}
+  <dt>Services</dt><dd>{{ c.services }}</dd>
+  <dt>Launch milestones</dt><dd>{{ c.launch_milestones }}</dd>
+  <dt>Public protections</dt><dd>{{ c.public_protections }}</dd>
+  <dt>Selected commercial terms</dt><dd>{{ c.selected_terms }}</dd>
+  <dt>Founding Fund terms</dt><dd>{{ "%.2f"|format(c.fund_rate_bp / 100) }}% of quarterly operating receipts until the amount advanced plus a fixed {{ "%.2f"|format(c.fund_return_bp / 100) }}% return is repaid; maximum obligation ${{ "{:,}".format(c.fund_max_obligation) }}. Repaid so far: ${{ "{:,}".format(repaid) }}.</dd>
+  <dt>State surplus share</dt><dd>{{ c.surplus_rate_pct }}% of positive shareable surplus, to the State land-acquisition account</dd>
+</dl></section>
+<section class="card"><h2>Supervision decisions</h2>
+  {% for d in decisions %}<p><strong>{{ d.kind }}</strong> · <span class="status {{ d.decision }}">{{ d.decision }}</span> · {{ d.created_on.strftime('%d %b %Y') }}<br>{{ d.request }}{% if d.reasons %}<br><span class="small"><strong>Supervisor:</strong> {{ d.reasons }}</span>{% endif %}</p>{% else %}<p class="muted">None yet.</p>{% endfor %}
+</section>
+<section class="card"><h2>Quarterly reports</h2>
+  <table><tr><th>Quarter</th><th class="right">Operating receipts</th><th class="right">Shareable surplus</th><th class="right">Fund repayment</th><th class="right">State land account</th></tr>
+  {% for r in reports %}<tr><td>{{ r.quarter }}</td><td class="right">${{ "{:,}".format(r.operating_receipts) }}</td><td class="right">${{ "{:,}".format(r.shareable_surplus) }}</td><td class="right">${{ "{:,}".format(r.fund_remittance) }}</td><td class="right">${{ "{:,}".format(r.state_share) }}</td></tr>{% else %}<tr><td colspan="5" class="muted">No reports yet.</td></tr>{% endfor %}</table>
+</section>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+{% block title %}Your dashboard · The Cornerstone{% endblock %}
+{% block page %}
+<h1>Your dashboard</h1>
+
+{% if tour %}
+<section class="card tour">
+  <h2>Your guided path</h2>
+  <ol>{% for step, url in tour %}<li>{% if url %}<a href="{{ url }}">{{ step }}</a>{% else %}{{ step }}{% endif %}</li>{% endfor %}</ol>
+  <p class="small muted">You are using a preview account. Try another role from <a href="/preview">the preview page</a>; open it in a private window to keep this one.</p>
+</section>
+{% endif %}
+
+{% set desks = [('labor', '/labor', 'Department of Labor desk', 'items waiting'), ('commerce', '/commerce', 'Exchange administration', 'offers to verify'), ('state', '/state', 'State offers and compacts', 'offers in progress'), ('supervisor', '/supervisor', 'Supervision desk', 'requests pending')] %}
+{% if counts %}
+<div class="grid">
+{% for key, url, title, what in desks %}{% if key in counts %}
+  <section class="card next-step"><h3><a href="{{ url }}">{{ title }}</a></h3><p>{{ counts[key] }} {{ what }}</p><a class="btn" href="{{ url }}">Open</a></section>
+{% endif %}{% endfor %}
+{% if current_user(request).role == 'admin' %}<section class="card next-step"><h3><a href="/site">Site and the legal-mode switch</a></h3><p>Currently in <strong>{{ legal_mode() }}</strong> mode.</p><a class="btn" href="/site">Open</a></section>{% endif %}
+</div>
+{% endif %}
+
+{% if open_ballots %}
+<section class="card next-step">
+  <h2>Your vote is needed</h2>
+  {% for b in open_ballots %}<p><a href="/app/associations/{{ assoc.ref }}#ballots">{{ b.title }}</a> · closes {{ b.closes_on.strftime('%d %b %Y') }}</p>{% endfor %}
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Your claims</h2>
+  {% if claims %}
+  <table><tr><th>Claim</th><th>Event</th><th>Occupation</th><th>Status</th><th>Filed</th></tr>
+  {% for c in claims %}<tr><td><a href="/app/claims/{{ c.ref }}">{{ c.ref }}</a></td><td>{{ c.event.ref }} · {{ c.event.title }}</td><td>{{ c.occupation }}</td><td><span class="status {{ c.status }}">{{ c.status|label }}</span></td><td>{{ c.filed_on.strftime('%d %b %Y') }}</td></tr>{% endfor %}
+  </table>
+  {% else %}
+  <p>You have not filed a claim. If a government action deliberately ended the work you lived on, and Labor has certified it, you can file.</p>
+  {% endif %}
+  <p><a class="btn primary" href="/app/claims/new">File a claim</a> <a class="btn" href="/census">Find your event in the Census</a> <a class="btn" href="/app/petitions/new">Petition for a new event</a></p>
+  {% if certified_events %}<p class="small muted">Certified events: {% for e in certified_events %}<a href="/exchange/events/{{ e.ref }}">{{ e.ref }} {{ e.title }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Your association</h2>
+  {% if assoc %}
+  <p><a href="/app/associations/{{ assoc.ref }}"><strong>{{ assoc.ref }} · {{ assoc.name }}</strong></a> <span class="status {{ assoc.status }}">{{ assoc.status|label }}</span></p>
+  <p class="small">You hold one founding unit{% if membership.on_board %} and sit on the board{% endif %}. Opportunity chosen: {{ membership.opportunity|label }}.</p>
+  {% else %}
+  <p>Workers with certified claims join together in a Cornerstone Association, which ranks State offers and runs the business it wins.</p>
+  <p><a class="btn" href="/app/associations">Join or form an association</a></p>
+  {% endif %}
+</section>
+{% endblock %}

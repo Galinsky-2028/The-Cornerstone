@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+{% block title %}Keep me informed · The Cornerstone{% endblock %}
+{% block page %}
+<section class="card narrow" style="max-width:620px">
+  <h1>Keep me informed</h1>
+  {% if done %}
+  <p class="notice ok">Thank you. You will hear from the campaign when there is news about the Cornerstone.</p>
+  {% else %}
+  {% if error %}<p class="notice warn">{{ error }}</p>{% endif %}
+  <form method="post" action="/keep-me-informed">
+    {{ csrf_field(request) }}
+    <label>I am
+      <select name="kind" required>
+        <option value="worker">A worker who lost a livelihood to a government action</option>
+        <option value="supporter">A supporter</option>
+        <option value="official">A legislator, official or staff member</option>
+        <option value="press">A journalist</option>
+      </select></label>
+    <label>Name <input name="name" required autocomplete="name"></label>
+    <label>Email <input type="email" name="email" required autocomplete="email"></label>
+    <label>State <input name="state_name" autocomplete="address-level1"></label>
+    <label>Organization or office (optional) <input name="organization"></label>
+    <label>Census event, if you were affected (optional) <input name="census_id" value="{{ census_id }}" placeholder="e.g. C-028"></label>
+    <label>Anything you want us to know (optional) <textarea name="message" rows="4"></textarea></label>
+    <button class="btn primary" type="submit">Keep me informed</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

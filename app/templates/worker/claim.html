@@ -1,0 +1,56 @@
+{% extends "layout.html" %}
+{% block title %}Claim {{ c.ref }} · The Cornerstone{% endblock %}
+{% block page %}
+<p class="small"><a href="/app">← Dashboard</a></p>
+<h1>Claim {{ c.ref }} <span class="status {{ c.status }}">{{ c.status|label }}</span></h1>
+<p class="muted">{{ c.worker_name }}{% if c.deceased %} (deceased; successor {{ c.successor_name }}, {{ c.successor_relationship }}){% endif %} · {{ c.occupation }} · <a href="/exchange/events/{{ e.ref }}">{{ e.ref }} {{ e.title }}</a></p>
+
+{% if c.status == 'filed' %}<p class="notice">Filed {{ c.filed_on.strftime('%d %B %Y') }}. The Department of Labor must decide by {{ decision_due.strftime('%d %B %Y') }}.</p>{% endif %}
+{% if c.status in ['certified','denied','remedied'] and c.decision_reasons %}
+<section class="card next-step"><h2>Decision{% if c.decided_on %} · {{ c.decided_on.strftime('%d %B %Y') }}{% endif %}</h2><p>{{ c.decision_reasons }}</p>
+  {% if c.hearing_outcome %}<p><strong>Hearing:</strong> {{ c.hearing_outcome }}</p>{% endif %}
+  {% if c.status == 'certified' and not membership %}<p><a class="btn primary" href="/app/associations">Join or form an association</a></p>{% endif %}
+  {% if membership %}<p>On the founding roll of <a href="/app/associations/{{ membership.association.ref }}">{{ membership.association.name }}</a>.</p>{% endif %}
+</section>{% endif %}
+
+{% if mine and hearing_open %}
+<section class="card"><h2>Request a hearing</h2>
+  <p class="small">You may ask for a hearing before an independent officer until {{ hearing_deadline.strftime('%d %B %Y') }}.</p>
+  <form method="post" action="/app/claims/{{ c.ref }}/hearing">{{ csrf_field(request) }}
+    <label>Why the decision is wrong<textarea name="reasons" rows="4" required></textarea></label>
+    <button class="btn primary" type="submit">Request a hearing</button></form>
+</section>{% endif %}
+{% if c.status == 'hearing_requested' %}<section class="card"><h2>Hearing requested</h2><p>{{ c.hearing_request }}</p></section>{% endif %}
+
+<section class="card">
+  <h2>How your facts measure against the Act</h2>
+  <p class="small muted">An automatic check of what you stated. The examiner decides on the evidence; a question mark means the Act leaves it to the examiner's judgment.</p>
+  <ul>{% for f in result.findings %}<li class="{{ 'check-pass' if f.passed else ('check-fail' if f.passed == false else 'check-open') }}"><strong>{{ '✓' if f.passed else ('✗' if f.passed == false else '?') }} {{ f.test }}.</strong> <span class="check-text">{{ f.explanation }}</span></li>{% endfor %}</ul>
+  <p>Overall: <strong>{{ {'certify': 'meets every test as stated', 'deny': 'does not meet a test as stated', 'examine': 'needs the examiner’s judgment'}[result.recommendation] }}</strong>.</p>
+</section>
+
+<section class="card">
+  <h2>What you stated</h2>
+  <dl class="kv">
+    <dt>Work</dt><dd>{{ work_types.get(c.work_type, c.work_type) }} · {{ c.occupation }}{% if c.employer %} · {{ c.employer }}{% endif %}{% if c.worksite %} · {{ c.worksite }}{% endif %}</dd>
+    <dt>Representative period</dt><dd>{{ c.baseline_start.strftime('%d %b %Y') }} to {{ c.baseline_end.strftime('%d %b %Y') }}</dd>
+    <dt>Earnings</dt><dd>{{ c.baseline_covered_earned|money }} from covered work of {{ c.baseline_total_earned|money }} total; {{ "{:,}".format(c.baseline_covered_hours) }} covered hours</dd>
+    <dt>Separation</dt><dd>{{ separations.get(c.separation_type, c.separation_type) }} on {{ c.separation_date.strftime('%d %b %Y') }}</dd>
+    {% if c.is_supplier %}<dt>Supplier</dt><dd>{{ c.supplier_share_pct }}% of covered work from the targeted industry</dd>{% endif %}
+    {% if c.prior_benefits %}<dt>Other benefits</dt><dd>{{ c.prior_benefits }} (these never reduce eligibility)</dd>{% endif %}
+  </dl>
+</section>
+
+<section class="card" id="evidence">
+  <h2>Evidence</h2>
+  {% for d in docs %}<p><a href="/app/claims/{{ c.ref }}/documents/{{ d.id }}">{{ d.filename }}</a> <span class="small muted">· {{ doc_kinds.get(d.kind, d.kind) }} · {{ (d.size / 1024)|round(1) }} KB</span></p>{% else %}<p class="muted">No documents yet.</p>{% endfor %}
+  {% if mine %}
+  <form method="post" action="/app/claims/{{ c.ref }}/documents" enctype="multipart/form-data" class="row">{{ csrf_field(request) }}
+    <label>Kind<select name="kind">{% for k, v in doc_kinds.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+    <label>File<input type="file" name="file" required></label>
+    <button class="btn" type="submit">Upload</button>
+  </form>
+  <p class="small muted">Accepted proof for this event: {{ e.acceptable_proof }}{% if is_preview() %} In the preview, any small file will do; please don't upload real personal records.{% endif %}</p>
+  {% endif %}
+</section>
+{% endblock %}

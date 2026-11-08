@@ -1,0 +1,30 @@
+{% extends "layout.html" %}
+{% block title %}{{ r.name }} · Exchange{% endblock %}
+{% block page %}
+<p class="small"><a href="/exchange#rounds">← Rounds</a></p>
+<h1>{{ r.name }} <span class="status {{ r.status }}">{{ r.status }}</span></h1>
+<section class="card"><dl class="kv">
+  <dt>Rankings close</dt><dd>{{ r.rankings_close.strftime('%d %B %Y') }}</dd>
+  <dt>Public random drawing</dt><dd><code class="wrap">{{ r.random_seed }}</code><br><span class="small muted">Fixed when the round opened. An association's draw number is the SHA-256 hash of this value, a colon, and the association's number; lower draws go first when priority dates are equal.</span></dd>
+  <dt>Matching rule</dt><dd>Association-proposing deferred acceptance, as section 5(b) describes: each association proposes to its highest remaining choice; each offer keeps the proposer with priority (oldest unremedied injury, then the drawing) and releases the others to their next choice, until no proposal remains.</dd>
+  <dt>Rankings received</dt><dd>{{ submitted }}</dd>
+</dl></section>
+<section class="card"><h2>Offers in this round</h2>
+  <ul>{% for o in offers %}<li><a href="/exchange/offers/{{ o.ref }}">{{ o.ref }}</a> · {{ o.trade }} · {{ o.district }}, {{ o.state_name }}</li>{% endfor %}</ul>
+</section>
+{% if sealed %}
+<section class="card"><p>Rankings are sealed until the deadline. No official and no competing association can see them.</p></section>
+{% else %}
+<section class="card"><h2>Results</h2>
+  <table><tr><th>Association</th><th>Matched offer</th><th>Priority date</th><th>Status</th></tr>
+  {% for m in matches %}<tr><td>{{ m.association.ref }} · {{ m.association.name }}</td><td>{{ m.offer.ref }} · {{ m.offer.trade }}</td><td>{{ m.priority_date.strftime('%d %b %Y') }}</td><td><span class="status {{ m.status }}">{{ m.status }}</span></td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No matches.</td></tr>{% endfor %}</table>
+</section>
+<section class="card"><h2>Everything needed to reproduce the match</h2>
+  <table><tr><th>Association</th><th>Ranking, most preferred first</th><th>Priority date</th><th>Draw number</th></tr>
+  {% for rk in rankings %}<tr><td>{{ rk.a.ref }}</td><td>{{ rk.offers|join(' → ') }}</td><td>{{ rk.priority.strftime('%d %b %Y') if rk.priority }}</td><td><code>{{ rk.draw }}…</code></td></tr>{% endfor %}</table>
+  <h3>Step-by-step record</h3>
+  <ol class="small">{% for line in (r.match_log or []) %}<li>{{ line }}</li>{% endfor %}</ol>
+</section>
+{% endif %}
+{% endblock %}

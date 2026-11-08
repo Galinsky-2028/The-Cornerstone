@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block title %}{{ e.id }} {{ e.title }} · Census{% endblock %}
+{% block page %}
+<p class="small"><a href="/census">← Census</a></p>
+<h1>{{ e.id }} · {{ e.title }}</h1>
+<section class="card">
+<dl class="kv">
+  <dt>Government</dt><dd>{{ e.sovereign }}</dd>
+  <dt>Date</dt><dd>{{ e.date }}</dd>
+  <dt>Instrument</dt><dd>{{ e.instrument }}</dd>
+  <dt>Government action</dt><dd>{{ e.action }}</dd>
+  <dt>Why it may qualify</dt><dd>{{ e.why }}</dd>
+  <dt>Affected group record</dt><dd>{{ e.group_record }}</dd>
+  <dt>Causation and limits</dt><dd>{{ e.causation }}</dd>
+  <dt>Screening</dt><dd>{{ e.disposition }}</dd>
+  <dt>Evidence still needed</dt><dd>{{ e.further }}</dd>
+  <dt>Sources</dt><dd>{% for u in [e.source1, e.source2] %}{% if u and u.startswith('http') %}<a href="{{ u }}" rel="noopener noreferrer">{{ u }}</a><br>{% endif %}{% endfor %}<span class="small muted">{{ e.citation_check }}</span></dd>
+</dl>
+</section>
+<section class="card">
+  <p>This entry is research, not a certification. If you lost your livelihood to this action, the Act lets you and one other affected worker petition the Department of Labor.</p>
+  <p>{% if is_preview() %}<a class="btn primary" href="/preview">See how a petition works</a> {% else %}<a class="btn primary" href="/app/petitions/new?census_id={{ e.id }}">Petition for certification</a> {% endif %}<a class="btn" href="/keep-me-informed?census_id={{ e.id }}">I was affected: keep me informed</a></p>
+</section>
+{% endblock %}

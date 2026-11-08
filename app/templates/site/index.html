@@ -1,0 +1,64 @@
+{% extends "layout.html" %}
+{% block title %}Site administration · The Cornerstone{% endblock %}
+{% block page %}
+<h1>Site administration <span class="mode-badge {{ mode }}">{{ mode }} mode</span></h1>
+<p class="small"><a href="/admin">Users, API keys and the audit log</a></p>
+
+<section class="card {{ 'danger-zone' if has_password }}" id="switch">
+  <h2>The legal-mode switch</h2>
+  {% if mode == 'preview' %}
+  <p><strong>Preview mode.</strong> Every page says the Act is not yet law, the preview accounts work, and example records are shown. When the Act takes effect, switch to enacted mode: the warnings disappear, every preview account is switched off and signed out, and every example record is hidden, so the real register starts empty. The example records stay in the database for the audit trail.</p>
+  {% else %}
+  <p><strong>Enacted mode.</strong> The Act is in force. Preview accounts are switched off and example records are hidden. Switching back to preview would put "not yet law" warnings on a live program and reopen the preview accounts.</p>
+  {% endif %}
+  {% if not has_password %}
+    <p class="notice warn">Set a switch password below before the switch can be used.</p>
+  {% else %}
+  {% set target = 'enacted' if mode == 'preview' else 'preview' %}
+  <form method="post" action="/site/mode" data-confirm="Switch the whole site to {{ target }} mode?">{{ csrf_field(request) }}
+    <input type="hidden" name="mode" value="{{ target }}">
+    <div class="row">
+      <label>Switch password<input type="password" name="password" required autocomplete="off"></label>
+      <label>Type <strong>{{ phrases[target] }}</strong> to confirm<input name="phrase" required autocomplete="off"></label>
+    </div>
+    <button class="btn {{ 'primary' if target == 'enacted' else 'danger' }}" type="submit">Switch to {{ target }} mode</button>
+  </form>
+  <p class="small muted">Only administrators can reach this page. The change also needs the switch password, which is separate from any sign-in password. Five wrong attempts lock the switch for an hour. Every attempt is recorded, and all administrators are emailed when the mode changes.</p>
+  {% endif %}
+</section>
+
+<section class="card" id="password">
+  <h2>{{ 'Change the switch password' if has_password else 'Set the switch password' }}</h2>
+  <form method="post" action="/site/switch-password">{{ csrf_field(request) }}
+    {% if has_password %}<label>Current switch password<input type="password" name="current" required autocomplete="off"></label>{% endif %}
+    <div class="row">
+      <label>New switch password (at least 14 characters, different from your sign-in password)<input type="password" name="new" required minlength="14" autocomplete="new-password"></label>
+      <label>Repeat it<input type="password" name="confirm" required minlength="14" autocomplete="new-password"></label>
+    </div>
+    <button class="btn" type="submit">{{ 'Change' if has_password else 'Set' }} the switch password</button>
+  </form>
+  <p class="small muted">{% if has_password %}Only someone who knows the current switch password can change it.{% else %}Once set, it can be changed only by someone who knows it. It is stored only as a one-way hash and cannot be recovered, so keep it somewhere safe.{% endif %}</p>
+</section>
+
+{% if mode == 'preview' %}
+<section class="card"><h2>The preview</h2>
+  <p>{{ preview_accounts }} visitor preview accounts are active. The example world is rebuilt every night.</p>
+  <form method="post" action="/site/reset-preview" data-confirm="Reset the example world now? Every visitor's preview account and changes are removed.">{{ csrf_field(request) }}<button class="btn" type="submit">Reset the preview now</button></form>
+</section>
+{% endif %}
+
+<section class="card"><h2>Records</h2>
+  <table><tr><th></th><th class="right">Real</th><th class="right">Preview examples</th></tr>
+  {% for label, n in stats.items() %}<tr><td>{{ label }}</td><td class="right">{{ n.real }}</td><td class="right">{{ n.demo }}</td></tr>{% endfor %}</table>
+</section>
+
+<section class="card"><h2>Keep-me-informed sign-ups ({{ interest|length }})</h2>
+  <p><a class="btn small" href="/site/interest.csv">Download CSV</a></p>
+  <table><tr><th>Date</th><th>Who</th><th>Name</th><th>Email</th><th>State</th><th>Organization</th></tr>
+  {% for i in interest %}<tr><td>{{ i.created_at.strftime('%d %b %Y') }}</td><td>{{ i.kind }}</td><td>{{ i.name }}</td><td>{{ i.email }}</td><td>{{ i.state_name }}</td><td>{{ i.organization }}</td></tr>{% else %}<tr><td colspan="6" class="muted">None yet.</td></tr>{% endfor %}</table>
+</section>
+
+<section class="card"><h2>Switch history</h2>
+  {% for ev in history %}<p class="small">{{ ev.created_at.strftime('%d %b %Y %H:%M') }} · {{ ev.action }}{% if ev.target %} · {{ ev.target }}{% endif %} · user {{ ev.actor_id }}</p>{% else %}<p class="muted">No changes yet.</p>{% endfor %}
+</section>
+{% endblock %}

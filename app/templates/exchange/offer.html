@@ -1,0 +1,24 @@
+{% extends "layout.html" %}
+{% block title %}Offer {{ o.ref }} · Exchange{% endblock %}
+{% block page %}
+<p class="small"><a href="/exchange#offers">← Offers</a></p>
+<h1>{{ o.ref }} · {{ o.trade }} <span class="status {{ o.status }}">{{ o.status.replace('_',' ') }}</span></h1>
+<p class="muted">{{ o.state_name }} · {{ o.district }}{% if o.published_on %} · public since {{ o.published_on.strftime('%d %b %Y') }}{% endif %} · program: {{ o.label }}</p>
+<section class="card"><dl class="kv">
+  <dt>Prohibition in force today</dt><dd>{{ o.prohibition }}</dd>
+  <dt>Authority to lift it</dt><dd>{{ o.lifting_authority }}</dd>
+  <dt>State enabling law</dt><dd>{{ o.enabling_law }}</dd>
+  <dt>Technical requirements</dt><dd>{{ o.technical_requirements }}</dd>
+  <dt>Regulatory and tax obligations</dt><dd>{{ o.obligations }}</dd>
+  <dt>Independent supervisor</dt><dd>{{ o.supervisor }}</dd>
+  <dt>State surplus share</dt><dd>{{ o.surplus_rate_pct }}% of positive shareable surplus, paid only into the State land-acquisition account</dd>
+  <dt>Negotiable commercial terms</dt><dd>{{ o.negotiable_terms }}</dd>
+  <dt>Federal authorization</dt><dd>{{ o.federal_authorization or 'No federal prohibition applies.' }}</dd>
+  <dt>Proof of no new harm</dt><dd>{{ o.no_new_harm }}</dd>
+  <dt>Exclusive term</dt><dd>30 years from the operative date, with one automatic 10-year renewal while the workers keep voting control</dd>
+</dl></section>
+<section class="card"><h2>Objections ({{ objections|length }})</h2>
+  {% for ob in objections %}<p><strong>{{ ob.author_name }}</strong>: {{ ob.body }}{% if ob.resolution %}<br><span class="small"><strong>State's response:</strong> {{ ob.resolution }}</span>{% endif %}</p>{% else %}<p class="muted">No objections filed.</p>{% endfor %}
+  {% if o.status == 'objection_period' %}<p><a class="btn" href="/app/offers/{{ o.ref }}/object">File an objection</a></p>{% endif %}
+</section>
+{% endblock %}

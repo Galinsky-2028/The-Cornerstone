@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+{% block title %}Try the preview · The Cornerstone{% endblock %}
+{% block page %}
+<h1>Try the Cornerstone yourself</h1>
+<p class="prose">Pick a role. You get your own preview account, signed in at once, inside a complete example of the program: certified events, workers with claims, associations, State offers, a matching round and a compact already running. Every step the Act describes works. Where the Act makes you wait (a 60-day evidence period, a 180-day enrollment), the preview gives you a button to skip ahead.</p>
+<p class="prose muted small">Nothing here is legally effective. Example events are based on real entries in the Displacement Event Census, but none has been certified: the Act is not law. The example world is rebuilt every night.</p>
+<div class="grid">
+{% for key, p in personas.items() %}
+  <section class="card persona">
+    <div>
+      <h3>{{ p.title }}</h3>
+      <p>{{ p.summary }}</p>
+      <ol class="small">{% for step, url in tours[key][:3] %}<li>{{ step }}</li>{% endfor %}</ol>
+    </div>
+    <form method="post" action="/preview/start">{{ csrf_field(request) }}
+      <input type="hidden" name="persona" value="{{ key }}">
+      <button class="btn primary" type="submit">Start as this role</button>
+    </form>
+  </section>
+{% endfor %}
+</div>
+<section class="card tour">
+  <h2>A suggested walk-through for legislators and staff (about 15 minutes)</h2>
+  <ol>
+    <li><strong>Labor examiner:</strong> close the Centralia evidence period and certify the event with findings; decide a claim.</li>
+    <li><strong>Displaced worker:</strong> file a claim against the New York coal event and watch the Act's eligibility tests applied as you file.</li>
+    <li><strong>Association member:</strong> vote on a sealed ranking and see why it needs a majority of <em>all</em> founding units.</li>
+    <li><strong>Commerce:</strong> close the round and run the matching rule; read the published step-by-step log.</li>
+    <li><strong>State official:</strong> draft a compact with the matched association; the Fund terms are fixed by formula.</li>
+    <li><strong>Supervisor:</strong> decide a pricing request on the public record.</li>
+  </ol>
+  <p class="small muted">To act in two roles at once, start the second in a private browser window.</p>
+</section>
+{% endblock %}

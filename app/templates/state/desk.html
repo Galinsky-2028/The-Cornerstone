@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% block title %}State offers · The Cornerstone{% endblock %}
+{% block page %}
+<h1>State offers and compacts{% if state %} · {{ state }}{% endif %}</h1>
+<p class="prose muted">Under a State Cornerstone Enabling Act, the State may offer one trade that is legally closed to every private person in a district, prove it takes nothing from anyone, and compact with whichever association the Exchange matches to it.</p>
+<p><a class="btn primary" href="/state/offers/new">Draft a new offer</a></p>
+<section class="card"><h2>Offers</h2>
+  <table><tr><th>Offer</th><th>District</th><th>Trade</th><th>Status</th><th>Next step</th></tr>
+  {% for o in offers %}<tr><td><a href="/state/offers/{{ o.ref }}">{{ o.ref }}</a></td><td>{{ o.district }}</td><td>{{ o.trade }}</td><td><span class="status {{ o.status }}">{{ o.status|label }}</span></td>
+    <td class="small">{{ {'draft': 'Complete the record and open objections', 'objection_period': 'Answer objections; submit after ' ~ (o.objection_ends.strftime('%d %b %Y') if o.objection_ends else ''), 'submitted': 'Commerce is verifying', 'verified': 'Commerce will publish it in a round', 'published': 'Public; awaiting rankings', 'matched': 'Negotiate the compact', 'compacted': 'Compact executed', 'withdrawn': '—'}.get(o.status, '') }}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">No offers yet.</td></tr>{% endfor %}</table>
+</section>
+<section class="card" id="matches"><h2>Matches and compacts</h2>
+  {% for m in matches %}{% set k = compacts.get(m.id) %}
+  <p><a href="/state/matches/{{ m.id }}">{{ m.offer.ref }} ↔ {{ m.association.name }}</a> <span class="status {{ m.status }}">{{ m.status }}</span>
+    {% if k %} · compact {{ k.ref }} <span class="status {{ k.status }}">{{ k.status|label }}</span>{% endif %}
+    {% if m.status == 'negotiating' %}<span class="small"> · deadline {{ m.negotiation_deadline.strftime('%d %b %Y') }}</span>{% endif %}</p>
+  {% else %}<p class="muted">No matches yet. Matches appear here when Commerce runs a round.</p>{% endfor %}
+</section>
+{% endblock %}

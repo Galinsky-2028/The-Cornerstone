@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+{% block title %}{{ e.ref }} {{ e.title }} · Exchange{% endblock %}
+{% block page %}
+<p class="small"><a href="/exchange#events">← Event register</a></p>
+<h1>{{ e.ref }} · {{ e.title }} <span class="status {{ e.status }}">{{ e.status.replace('_',' ') }}</span></h1>
+<section class="card">
+<dl class="kv">
+  <dt>Government</dt><dd>{{ e.sovereign }}</dd>
+  <dt>Government action</dt><dd>{{ e.action }}</dd>
+  <dt>Targeted work</dt><dd>{{ e.targeted_work }}</dd>
+  <dt>Affected group</dt><dd>{{ e.affected_group }}</dd>
+  <dt>Evidence of intent</dt><dd>{{ e.intent_evidence }}</dd>
+  <dt>Losses attributed</dt><dd>{{ e.attributed_losses }}</dd>
+  <dt>Petitioned by</dt><dd>{{ e.petitioner_type.replace('_',' ') }} · filed {{ e.filed_on.strftime('%d %b %Y') }}</dd>
+  <dt>Evidence period ends</dt><dd>{{ e.comment_ends.strftime('%d %b %Y') }}</dd>
+  <dt>Decision due</dt><dd>{{ e.decision_due.strftime('%d %b %Y') }}</dd>
+  {% if e.census_id %}<dt>Census entry</dt><dd><a href="/census/{{ e.census_id }}">{{ e.census_id }}</a></dd>{% endif %}
+</dl>
+</section>
+{% if e.status in ['certified','denied'] %}
+<section class="card">
+  <h2>Findings of the Department of Labor{% if e.decided_on %} · {{ e.decided_on.strftime('%d %b %Y') }}{% endif %}</h2>
+  <dl class="kv">
+    {% if e.status == 'certified' %}
+    <dt>Covered occupations</dt><dd>{{ e.occupations }}</dd>
+    <dt>Worksites or enterprises</dt><dd>{{ e.worksites }}</dd>
+    <dt>Geography</dt><dd>{{ e.geography }}</dd>
+    <dt>Causal mechanism</dt><dd>{{ e.causal_mechanism }}</dd>
+    <dt>Contrary evidence considered</dt><dd>{{ e.contrary_evidence }}</dd>
+    <dt>Causal period</dt><dd>{{ e.causal_start.strftime('%d %b %Y') if e.causal_start }} to {{ e.causal_end.strftime('%d %b %Y') if e.causal_end else 'open' }}</dd>
+    <dt>First proven separation</dt><dd>{{ e.first_separation.strftime('%d %b %Y') if e.first_separation }} (this date sets matching priority)</dd>
+    <dt>Acceptable individual proof</dt><dd>{{ e.acceptable_proof }}</dd>
+    <dt>Workers certified so far</dt><dd>{{ certified }}</dd>
+    {% endif %}
+    <dt>Reasons</dt><dd>{{ e.decision_reasons }}</dd>
+  </dl>
+</section>
+{% endif %}
+<section class="card">
+  <h2>Evidence and responses ({{ comments|length }})</h2>
+  {% for c in comments %}<p><strong>{{ c.author_name }}</strong>{% if c.organization %}, {{ c.organization }}{% endif %} · <span class="small">{{ c.position }} · {{ c.created_at.strftime('%d %b %Y') }}</span><br>{{ c.body }}</p>{% else %}<p class="muted">None yet.</p>{% endfor %}
+  {% if e.status == 'comment_period' %}<p><a class="btn" href="/app/events/{{ e.ref }}/respond">Submit evidence or a response</a></p>{% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+{% block title %}The Cornerstone · Restoring livelihoods government deliberately destroyed{% endblock %}
+{% block page %}
+<section class="hero">
+  <h1>When government removes the cornerstone, justice means laying a new one.</h1>
+  <p>The Cornerstone restores a durable economic foundation to people whose livelihoods government deliberately destroyed. Certified workers form worker-owned associations, and participating states offer them limited regional rights in trades that are prohibited today, with no existing job or business taken from anyone and no net cost to the taxpayer.</p>
+  <p class="row">
+    {% if is_preview() %}<a class="btn" href="/preview">Try every role in the preview</a>{% endif %}
+    <a class="btn ghost" href="/how-it-works">How it works</a>
+    <a class="btn ghost" href="/documents/federal-bill">Read the bill</a>
+  </p>
+</section>
+
+<div class="grid">
+  <section class="card">
+    <h2>Who it is for</h2>
+    <p>Miners, loggers, fishermen, plant workers, owner-operators and others whose principal livelihood ended because a government deliberately set out to destroy or shrink their lawful industry. It is not for losses from ordinary competition, technology or market change.</p>
+  </section>
+  <section class="card">
+    <h2>What it restores</h2>
+    <p>Not a cash payment. A new economic foundation that the injured workers own and govern together: one member, one vote, an equal share, and first chance at training, jobs and franchises in the new enterprise.</p>
+  </section>
+  <section class="card">
+    <h2>What it never does</h2>
+    <p>It never takes an existing job, license, contract, customer or market from anyone. It never forces anyone to move, retrain or borrow. It gives the government no ownership, no board seat and no veto.</p>
+  </section>
+</div>
+
+<section class="card">
+  <h2>The research behind it</h2>
+  <p>The Displacement Event Census lists {{ census_count }} government actions that research identified as possible qualifying events, from National Prohibition to recent fishery closures. The census is a research register: it certifies no one and creates no claim. Under the Act, the Department of Labor certifies events only after a public petition and findings.</p>
+  <p><a class="btn" href="/census">Browse the census</a> <a class="btn" href="/keep-me-informed">Keep me informed</a></p>
+</section>
+{% endblock %}

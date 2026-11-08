@@ -1,0 +1,61 @@
+{% extends "layout.html" %}
+{% block title %}File a claim · The Cornerstone{% endblock %}
+{% block page %}
+<h1>File an individual claim</h1>
+<p class="prose">Section 3 of the Act. You are eligible if the work a certified event targeted was your principal livelihood (more than half of your earned income, or at least 1,000 hours, in a representative 12 months before the harm began) and you lost it, or a substantial part of it, during the certified causal period. File within two years of certification or of your separation, whichever is later. Labor must decide within 90 days.</p>
+{% if not events %}
+<p class="notice warn">No event has been certified yet. You can <a href="/app/petitions/new">petition for one</a>.</p>
+{% else %}
+<form method="post" class="card">{{ csrf_field(request) }}
+  <h2>The event</h2>
+  <label>Certified event
+    <select name="event_ref" required>
+      {% for e in events %}<option value="{{ e.ref }}" {% if chosen and chosen.id == e.id %}selected{% endif %}>{{ e.ref }} · {{ e.title }} (causal period from {{ e.causal_start.strftime('%b %Y') if e.causal_start }})</option>{% endfor %}
+    </select></label>
+  {% if chosen %}<p class="small muted">Covered: {{ chosen.occupations }}. Proof accepted: {{ chosen.acceptable_proof }}</p>{% endif %}
+
+  <h2>Your work</h2>
+  <div class="row">
+    <label>Your name<input name="worker_name" required value="{{ worker.name or '' }}"></label>
+    <label>How you worked<select name="work_type">{% for k, v in work_types.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+  </div>
+  <div class="row">
+    <label>Occupation<input name="occupation" required></label>
+    <label>Employer, or "self"<input name="employer"></label>
+    <label>Worksite<input name="worksite"></label>
+  </div>
+
+  <h2>Your representative 12 months before the harm began</h2>
+  <div class="row">
+    <label>From<input type="date" name="baseline_start" required></label>
+    <label>To<input type="date" name="baseline_end" required></label>
+  </div>
+  <div class="row">
+    <label>All earned income in that period ($)<input name="baseline_total_earned" inputmode="numeric" required></label>
+    <label>Of which from the covered work ($)<input name="baseline_covered_earned" inputmode="numeric" required></label>
+    <label>Hours of covered work<input name="baseline_covered_hours" inputmode="numeric" required></label>
+  </div>
+
+  <h2>How you lost the work</h2>
+  <div class="row">
+    <label>What happened<select name="separation_type">{% for k, v in separations.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+    <label>Date<input type="date" name="separation_date" required></label>
+    <label>Covered hours in the same-length period afterwards (for a partial loss)<input name="after_covered_hours" inputmode="numeric" value="0"></label>
+  </div>
+  <label><input type="checkbox" name="is_supplier" value="1"> I worked for a direct supplier or contractor of the targeted industry, not in it</label>
+  <label>If so, the share of your covered work that came from the targeted industry (%)<input name="supplier_share_pct" inputmode="numeric" value="0"></label>
+  <label>Severance, unemployment insurance, trade adjustment or other benefits you received (these do not reduce eligibility)<textarea name="prior_benefits" rows="2"></textarea></label>
+
+  <details class="section"><summary>Filing for a worker who has died</summary>
+    <p class="small">One successor may file for, or continue the claim of, a worker who died. The successor holds the founding unit.</p>
+    <label><input type="checkbox" name="deceased" value="1"> The worker named above has died and I am the successor</label>
+    <div class="row">
+      <label>Successor's name<input name="successor_name"></label>
+      <label>Relationship to the worker<input name="successor_relationship"></label>
+    </div>
+  </details>
+  <p><button class="btn primary" type="submit">File the claim</button></p>
+  <p class="small muted">Next you will see how your facts measure against each test in the Act, and you can upload your evidence.</p>
+</form>
+{% endif %}
+{% endblock %}

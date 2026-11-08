@@ -1,0 +1,127 @@
+{% extends "layout.html" %}
+{% block title %}{{ a.name }} · The Cornerstone{% endblock %}
+{% block page %}
+<p class="small"><a href="/app/associations">← Associations</a></p>
+<h1>{{ a.name }} <span class="status {{ a.status }}">{{ a.status|label }}</span></h1>
+<p class="muted">{{ a.ref }} · principal state {{ a.principal_state }} · {{ units }} founding unit{{ 's' if units != 1 }}{% if priority %} · priority date {{ priority.strftime('%d %B %Y') }}{% endif %}</p>
+{% if a.purpose %}<p class="prose">{{ a.purpose }}</p>{% endif %}
+{% set board = member and member.on_board %}
+
+{% if a.status == 'chartering' %}<p class="notice">Waiting for the Department of Labor to grant the charter.</p>{% endif %}
+{% if a.status == 'enrolling' %}
+<section class="card next-step"><h2>Enrollment</h2>
+  <p>Open from {{ a.enrollment_opens.strftime('%d %b %Y') }} to {{ a.enrollment_closes.strftime('%d %b %Y') }}. When it closes, the founding roll is fixed and published, and the association may rank State offers.</p>
+  {% if board %}<form method="post" action="/app/associations/{{ a.ref }}/close-roll" class="{{ 'preview-only' if today < a.enrollment_closes }}" data-confirm="Close the founding roll? No one else can join afterwards.">{{ csrf_field(request) }}
+    <button class="btn" type="submit">{% if today < a.enrollment_closes %}Preview: end enrollment now and close the roll{% else %}Close the founding roll{% endif %}</button></form>{% endif %}
+</section>{% endif %}
+
+<section class="card" id="ballots">
+  <h2>Ballots</h2>
+  <p class="small muted">A ballot passes only with yes votes from a majority of <strong>all {{ units }} founding units</strong>, not just of those who vote. Not voting counts the same as no.</p>
+  {% for row in ballots %}{% set b = row.b %}{% set t = row.t %}
+  <div class="ballot">
+    <h3>{{ b.title }} <span class="status {{ b.status }}">{{ b.status }}</span></h3>
+    <p>{{ b.description }}</p>
+    <div class="meter" role="img" aria-label="{{ t.yes }} of {{ t.needed }} yes votes needed"><span style="width: {{ (100 * t.yes / t.units)|round(0) if t.units else 0 }}%"></span></div>
+    <p class="small">{{ t.yes }} yes · {{ t.no }} no · {{ t.units - t.yes - t.no }} not yet voted · <strong>{{ t.needed }}</strong> yes votes needed · closes {{ b.closes_on.strftime('%d %b %Y') }}</p>
+    {% if b.status == 'open' %}
+      {% if member and not row.mine %}
+      <form method="post" action="/app/ballots/{{ b.id }}/vote" class="row">{{ csrf_field(request) }}
+        <button class="btn primary" name="choice" value="yes" type="submit">Vote yes</button>
+        <button class="btn" name="choice" value="no" type="submit">Vote no</button></form>
+      {% elif row.mine %}<p class="small">You voted <strong>{{ row.mine.choice }}</strong>.</p>{% endif %}
+      {% if is_preview() %}
+      <div class="preview-only row small">
+        <span>Preview:</span>
+        <form method="post" action="/app/ballots/{{ b.id }}/simulate" class="inline">{{ csrf_field(request) }}<button class="btn small" name="choice" value="yes" type="submit">Have the example members vote yes</button></form>
+        <form method="post" action="/app/ballots/{{ b.id }}/simulate" class="inline">{{ csrf_field(request) }}<button class="btn small" name="choice" value="no" type="submit">…vote no</button></form>
+        {% if board %}<form method="post" action="/app/ballots/{{ b.id }}/close" class="inline">{{ csrf_field(request) }}<button class="btn small" type="submit">End voting now</button></form>{% endif %}
+      </div>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% else %}<p class="muted">No ballots yet.</p>{% endfor %}
+</section>
+
+{% if a.status == 'roll_closed' or rankings %}
+<section class="card" id="rankings">
+  <h2>Sealed rankings</h2>
+  <p class="small muted">The board proposes a ranking of published offers, most preferred first, and the members approve it. Nobody outside the association sees it until the round closes. Matching then uses only the rankings and the published priority rule.</p>
+  {% for rk in rankings %}<p>{{ round_names.get(rk.round_id, '') }}: {% for oid in rk.offer_ids %}{{ loop.index }}. {{ offer_refs[oid].ref if oid in offer_refs }} {{ offer_refs[oid].trade if oid in offer_refs }}{% if not loop.last %}; {% endif %}{% endfor %} <span class="status {{ rk.status }}">{{ rk.status|label }}</span></p>{% endfor %}
+  {% if board and a.status == 'roll_closed' %}
+    {% for r in open_rounds %}{% set offers = round_offers[r.id] %}{% if offers %}
+    <form method="post" action="/app/associations/{{ a.ref }}/rankings" class="ballot">{{ csrf_field(request) }}
+      <input type="hidden" name="round_id" value="{{ r.id }}">
+      <h3>Propose a ranking for {{ r.name }} (rankings close {{ r.rankings_close.strftime('%d %b %Y') }})</h3>
+      <div class="row">{% for i in range(1, [offers|length, 5]|min + 1) %}
+        <label>Choice {{ i }}<select name="rank{{ i }}"><option value="">—</option>{% for o in offers %}<option value="{{ o.ref }}">{{ o.ref }} · {{ o.trade }} ({{ o.state_name }})</option>{% endfor %}</select></label>
+      {% endfor %}</div>
+      <button class="btn primary" type="submit">Send to the members' vote</button> <a class="small" href="/exchange#offers">Read the offers</a>
+    </form>
+    {% endif %}{% endfor %}
+  {% endif %}
+</section>
+{% endif %}
+
+{% if matches %}
+<section class="card"><h2>Matches</h2>
+  {% for m in matches %}<p>Matched with <a href="/exchange/offers/{{ m.offer.ref }}">{{ m.offer.ref }} {{ m.offer.trade }}</a>, {{ m.offer.district }}, {{ m.offer.state_name }} <span class="status {{ m.status }}">{{ m.status }}</span>{% if m.status == 'negotiating' %} · the State must conclude a compact by {{ m.negotiation_deadline.strftime('%d %b %Y') }}{% endif %}</p>{% endfor %}
+</section>{% endif %}
+
+{% if compact %}
+<section class="card"><h2>Compact {{ compact.ref }} <span class="status {{ compact.status }}">{{ compact.status|label }}</span></h2>
+  <dl class="kv"><dt>Services</dt><dd>{{ compact.services }}</dd><dt>Milestones</dt><dd>{{ compact.launch_milestones }}</dd>
+  <dt>Founding Fund</dt><dd>{{ compact.fund_rate_bp|bp }} of quarterly receipts until {{ compact.fund_max_obligation|money }} is repaid ({{ repaid|money }} so far)</dd>
+  <dt>State share</dt><dd>{{ compact.surplus_rate_pct }}% of positive surplus</dd></dl>
+  {% if compact.status == 'executed' %}<p><a href="/exchange/compacts/{{ compact.ref }}">Public record</a></p>{% endif %}
+</section>
+{% if compact.status == 'executed' %}
+<section class="card" id="reports"><h2>Quarterly reports</h2>
+  <table><tr><th>Quarter</th><th class="right">Receipts</th><th class="right">Surplus</th><th class="right">To the Fund</th><th class="right">To the State</th></tr>
+  {% for r in reports %}<tr><td>{{ r.quarter }}</td><td class="right">{{ r.operating_receipts|money }}</td><td class="right">{{ r.shareable_surplus|money }}</td><td class="right">{{ r.fund_remittance|money }}</td><td class="right">{{ r.state_share|money }}</td></tr>{% else %}<tr><td colspan="5" class="muted">None yet.</td></tr>{% endfor %}</table>
+  {% if board %}<form method="post" action="/app/associations/{{ a.ref }}/reports" class="row">{{ csrf_field(request) }}
+    <label>Quarter<input name="quarter" placeholder="2029-Q3" required></label>
+    <label>Operating receipts ($)<input name="operating_receipts" inputmode="numeric" required></label>
+    <label>Shareable surplus ($)<input name="shareable_surplus" inputmode="numeric" value="0"></label>
+    <button class="btn" type="submit">File the report</button></form>
+  <p class="small muted">The Fund payment and the State share are computed from the fixed rates; nobody negotiates them after execution.</p>{% endif %}
+</section>
+<section class="card" id="supervision"><h2>Requests to the supervisor</h2>
+  {% for d in sup %}<p><strong>{{ d.kind }}</strong> <span class="status {{ d.decision }}">{{ d.decision }}</span> · {{ d.request }}{% if d.reasons %}<br><span class="small">{{ d.reasons }}</span>{% endif %}</p>{% else %}<p class="muted">None yet.</p>{% endfor %}
+  {% if board %}<form method="post" action="/app/associations/{{ a.ref }}/supervision">{{ csrf_field(request) }}
+    <div class="row"><label>Kind<select name="kind">{% for k in supervision_kinds %}<option>{{ k }}</option>{% endfor %}</select></label></div>
+    <label>Request<textarea name="body" rows="2" required></textarea></label><button class="btn" type="submit">Send to the supervisor</button></form>{% endif %}
+</section>
+{% endif %}
+{% endif %}
+
+{% if restoration %}
+<section class="card"><h2>Restoration</h2><p><span class="status {{ restoration.status }}">{{ restoration.status }}</span> {{ restoration.findings }}</p></section>
+{% endif %}
+
+<section class="card" id="opportunity"><h2>Your opportunity</h2>
+  {% if member %}
+  <form method="post" action="/app/associations/{{ a.ref }}/opportunity" class="row">{{ csrf_field(request) }}
+    <label>Choose<select name="opportunity">{% for k, v in opportunities.items() %}<option value="{{ k }}" {% if member.opportunity == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+    <button class="btn" type="submit">Save</button></form>
+  <p class="small muted">Your founding unit and vote are the same whatever you choose.</p>
+  {% endif %}
+  <p class="small">Members' choices: {% for k, v in opportunities.items() %}{{ v }}: {{ opp_counts.get(k, 0) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+</section>
+
+<section class="card" id="fund"><h2>Founding Fund advances</h2>
+  <p class="small muted">The Fund pays providers directly for petitions, enrollment, formation, feasibility, legal and accounting work, licensing and training. It is repaid only from the enterprise's receipts at a fixed rate; members owe nothing personally.</p>
+  <table><tr><th>Purpose</th><th>Provider</th><th class="right">Amount</th><th>Status</th></tr>
+  {% for f in advances %}<tr><td>{{ fund_categories.get(f.category, f.category) }}</td><td>{{ f.provider }}</td><td class="right">{{ f.amount|money }}</td><td><span class="status {{ f.status }}">{{ f.status }}</span></td></tr>{% else %}<tr><td colspan="4" class="muted">None yet.</td></tr>{% endfor %}</table>
+  {% if board %}<form method="post" action="/app/associations/{{ a.ref }}/fund">{{ csrf_field(request) }}
+    <div class="row"><label>Purpose<select name="category">{% for k, v in fund_categories.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+    <label>Amount ($)<input name="amount" inputmode="numeric" required></label><label>Provider<input name="provider"></label></div>
+    <label>Description<textarea name="description" rows="2"></textarea></label><button class="btn" type="submit">Request an advance</button></form>{% endif %}
+</section>
+
+<section class="card"><h2>Founding roll</h2>
+  <p class="small muted">Published without names once the roll closes. Members see each other's occupation and event.</p>
+  <table><tr><th>Unit</th><th>Event</th><th>Occupation</th><th>Board</th></tr>
+  {% for m in members %}<tr><td>{{ loop.index }}{% if member and m.id == member.id %} (you){% endif %}</td><td>{{ m.claim.event.ref }}</td><td>{{ m.claim.occupation }}</td><td>{{ 'Board' if m.on_board }}</td></tr>{% endfor %}</table>
+</section>
+{% endblock %}

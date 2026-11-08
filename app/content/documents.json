@@ -1,0 +1,37 @@
+[
+ {
+  "slug": "policy-paper",
+  "title": "The Cornerstone Policy Paper",
+  "file": "Policy_Paper.docx",
+  "words": 5034,
+  "readable": true
+ },
+ {
+  "slug": "federal-bill",
+  "title": "Cornerstone Livelihood Restoration Act (Federal Bill)",
+  "file": "Federal_Cornerstone_Bill.docx",
+  "words": 4702,
+  "readable": true
+ },
+ {
+  "slug": "model-state-act",
+  "title": "Model State Cornerstone Enabling Act",
+  "file": "Model_State_Cornerstone_Enabling_Act.docx",
+  "words": 3926,
+  "readable": true
+ },
+ {
+  "slug": "design-commentary",
+  "title": "Design Commentary",
+  "file": "Design_Commentary.docx",
+  "words": 4504,
+  "readable": true
+ },
+ {
+  "slug": "census-document",
+  "title": "Displacement Event Census",
+  "file": "Displacement_Event_Census.docx",
+  "words": 47277,
+  "readable": false
+ }
+]

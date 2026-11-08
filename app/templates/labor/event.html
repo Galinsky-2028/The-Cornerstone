@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+{% block title %}Review {{ e.ref }} · Department of Labor{% endblock %}
+{% block page %}
+<p class="small"><a href="/labor">← Labor desk</a> · <a href="/exchange/events/{{ e.ref }}">Public record</a></p>
+<h1>{{ e.ref }} · {{ e.title }} <span class="status {{ e.status }}">{{ e.status|label }}</span></h1>
+<section class="card"><dl class="kv">
+  <dt>Government</dt><dd>{{ e.sovereign }}</dd><dt>Action</dt><dd>{{ e.action }}</dd>
+  <dt>Targeted work</dt><dd>{{ e.targeted_work }}</dd><dt>Affected group</dt><dd>{{ e.affected_group }}</dd>
+  <dt>Evidence of intent</dt><dd>{{ e.intent_evidence }}</dd><dt>Losses attributed</dt><dd>{{ e.attributed_losses }}</dd>
+  <dt>Petitioner</dt><dd>{{ e.petitioner_name }} ({{ e.petitioner_type|label }})</dd>
+  <dt>Evidence period</dt><dd>{{ e.filed_on.strftime('%d %b %Y') }} to {{ e.comment_ends.strftime('%d %b %Y') }}</dd>
+  <dt>Decision due</dt><dd>{{ e.decision_due.strftime('%d %b %Y') }}</dd>
+</dl></section>
+
+<section class="card"><h2>Evidence and responses ({{ comments|length }})</h2>
+  {% for c in comments %}<p><strong>{{ c.author_name }}</strong>{% if c.organization %}, {{ c.organization }}{% endif %} · <span class="small">{{ c.position }}</span><br>{{ c.body }}</p>{% else %}<p class="muted">None.</p>{% endfor %}
+</section>
+
+{% if e.status == 'comment_period' %}
+<section class="card"><p>The petition can be decided after the evidence period closes on {{ e.comment_ends.strftime('%d %B %Y') }}.</p>
+  {% if is_preview() %}<form method="post" action="/labor/events/{{ e.ref }}/end-evidence" class="preview-only">{{ csrf_field(request) }}<button class="btn" type="submit">Preview: end the evidence period now</button></form>{% endif %}
+</section>
+{% elif e.status == 'under_review' %}
+<form method="post" action="/labor/events/{{ e.ref }}/decide" class="card">{{ csrf_field(request) }}
+  <h2>Decision with written findings</h2>
+  <p class="small muted">Certify only if a deliberate purpose or chosen means of the action was to end or substantially restrict the lawful work. An incidental effect, a general rule, or market pressure is not enough. A certification must define the scope below.</p>
+  <label>Covered occupations<textarea name="occupations" rows="2"></textarea></label>
+  <label>Covered worksites or enterprises<textarea name="worksites" rows="2"></textarea></label>
+  <label>Geography<input name="geography"></label>
+  <label>Causal mechanism<textarea name="causal_mechanism" rows="2"></textarea></label>
+  <label>Contrary evidence considered<textarea name="contrary_evidence" rows="2"></textarea></label>
+  <div class="row">
+    <label>Causal period begins<input type="date" name="causal_start"></label>
+    <label>Causal period ends (blank if continuing)<input type="date" name="causal_end"></label>
+    <label>First proven attributable separation<input type="date" name="first_separation"></label>
+  </div>
+  <label>Acceptable individual proof<textarea name="acceptable_proof" rows="2"></textarea></label>
+  <label>Reasons<textarea name="decision_reasons" rows="4" required></textarea></label>
+  <button class="btn primary" name="decision" value="certify" type="submit">Certify the event</button>
+  <button class="btn danger" name="decision" value="deny" type="submit">Deny the petition</button>
+</form>
+{% else %}
+<section class="card"><p>Decided {{ e.decided_on.strftime('%d %B %Y') if e.decided_on }}. {{ e.decision_reasons }}</p></section>
+{% endif %}
+{% endblock %}

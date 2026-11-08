@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+{% block title %}Examine {{ c.ref }} · Department of Labor{% endblock %}
+{% block page %}
+<p class="small"><a href="/labor#claims">← Labor desk</a></p>
+<h1>Claim {{ c.ref }} <span class="status {{ c.status }}">{{ c.status|label }}</span></h1>
+<p class="muted">{{ c.worker_name }}{% if c.deceased %} (deceased; successor {{ c.successor_name }}, {{ c.successor_relationship }}){% endif %} · <a href="/exchange/events/{{ e.ref }}">{{ e.ref }} {{ e.title }}</a> · filed {{ c.filed_on.strftime('%d %b %Y') }}</p>
+
+<section class="card"><h2>The Act's tests applied to the stated facts</h2>
+  <ul>{% for f in result.findings %}<li class="{{ 'check-pass' if f.passed else ('check-fail' if f.passed == false else 'check-open') }}"><strong>{{ '✓' if f.passed else ('✗' if f.passed == false else '?') }} {{ f.test }}.</strong> <span class="check-text">{{ f.explanation }}</span></li>{% endfor %}</ul>
+</section>
+
+<section class="card"><h2>Stated facts and evidence</h2>
+  <dl class="kv">
+    <dt>Work</dt><dd>{{ work_types.get(c.work_type, c.work_type) }} · {{ c.occupation }} · {{ c.employer }} · {{ c.worksite }}</dd>
+    <dt>Representative period</dt><dd>{{ c.baseline_start.strftime('%d %b %Y') }} to {{ c.baseline_end.strftime('%d %b %Y') }}</dd>
+    <dt>Earnings</dt><dd>{{ c.baseline_covered_earned|money }} covered of {{ c.baseline_total_earned|money }}; {{ "{:,}".format(c.baseline_covered_hours) }} covered hours</dd>
+    <dt>Separation</dt><dd>{{ separations.get(c.separation_type, c.separation_type) }} on {{ c.separation_date.strftime('%d %b %Y') }}{% if c.separation_type == 'substantial' %}; {{ c.after_covered_hours }} covered hours afterwards{% endif %}</dd>
+    {% if c.is_supplier %}<dt>Supplier</dt><dd>{{ c.supplier_share_pct }}% from the targeted industry</dd>{% endif %}
+    <dt>Other benefits</dt><dd>{{ c.prior_benefits or 'None stated' }} (never a reason to reduce or deny)</dd>
+    <dt>Documents</dt><dd>{% for d in docs %}<a href="/app/claims/{{ c.ref }}/documents/{{ d.id }}">{{ d.filename }}</a> ({{ doc_kinds.get(d.kind, d.kind) }}){% if not loop.last %}, {% endif %}{% else %}None uploaded{% endfor %}</dd>
+    <dt>Proof accepted for this event</dt><dd>{{ e.acceptable_proof }}</dd>
+  </dl>
+</section>
+
+{% if c.status == 'filed' %}
+<form method="post" action="/labor/claims/{{ c.ref }}/decide" class="card">{{ csrf_field(request) }}
+  <h2>Decision</h2>
+  <label>Written reasons (sent to the worker)<textarea name="reasons" rows="4" required></textarea></label>
+  <button class="btn primary" name="decision" value="certify" type="submit">Certify</button>
+  <button class="btn danger" name="decision" value="deny" type="submit">Deny</button>
+</form>
+{% elif c.status == 'hearing_requested' %}
+<section class="card"><h2>Original decision</h2><p>{{ c.decision_reasons }}</p></section>
+<form method="post" action="/labor/claims/{{ c.ref }}/hearing" class="card">{{ csrf_field(request) }}
+  <h2>Hearing</h2><p><strong>The worker says:</strong> {{ c.hearing_request }}</p>
+  <p class="small muted">Decided by an officer who did not make the original decision.</p>
+  <label>Hearing findings<textarea name="reasons" rows="4" required></textarea></label>
+  <button class="btn primary" name="outcome" value="grant" type="submit">Reverse: certify the claim</button>
+  <button class="btn" name="outcome" value="uphold" type="submit">Uphold the denial</button>
+</form>
+{% else %}
+<section class="card"><h2>Decision</h2><p>{{ c.decision_reasons }}</p>{% if c.hearing_outcome %}<p><strong>Hearing:</strong> {{ c.hearing_outcome }}</p>{% endif %}</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block head %}<link rel="stylesheet" href="/app-static/cornerstone.css">{% endblock %}
+{% block nav %}
+  <a href="/how-it-works">How it works</a>
+  <a href="/documents">The Act</a>
+  <a href="/census">Census</a>
+  <a href="/exchange">Exchange</a>
+  {% if is_preview() %}<a href="/preview" class="nav-preview">Try the preview</a>{% endif %}
+{% endblock %}
+{% block content %}
+{% if is_preview() %}
+<div class="preview-banner" role="note">
+  <strong>Preview.</strong> The Cornerstone Livelihood Restoration Act is a proposed law and has not been enacted.
+  Every event, claim, association, offer and compact on this site is an example made to show how the program would work;
+  none of it is legally effective. <a href="/preview">Try any role yourself</a>.
+</div>
+{% endif %}
+{% if note %}<p class="notice ok" role="status">{{ note }}</p>{% endif %}
+{% block page %}{% endblock %}
+{% endblock %}
+{% block footer %}
+<p>The Cornerstone · a policy of the Galinsky 2028 campaign{% if is_preview() %} · Preview of a proposed law{% endif %}</p>
+<p><a href="/documents">The Act and its documents</a> · <a href="/exchange">Public Exchange</a> · <a href="/keep-me-informed">Keep me informed</a></p>
+{% endblock %}
