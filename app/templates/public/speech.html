@@ -2,5 +2,5 @@
 {% block title %}The Cornerstone speech{% endblock %}
 {% block page %}
 <p class="small"><a href="/documents">← All documents</a></p>
-<article class="card prose"><h1>The Cornerstone</h1><p class="muted">Transcript of the campaign address.</p><p>{{ text }}</p></article>
+<article class="card prose"><h1>The Cornerstone</h1><p class="muted">Transcript of the campaign address.</p>{{ text|markdown|safe }}</article>
 {% endblock %}
