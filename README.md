@@ -20,6 +20,10 @@ The working website for the Cornerstone Livelihood Restoration Act, a Galinsky 2
 
 Code: `app/rules.py` (the Act's tests and formulas), `app/models.py`, `app/views/` (one module per role), `app/seed.py` (the example world), `tests/test_cornerstone.py`.
 
+**Where it runs.** https://the-cornerstone.onrender.com, in preview mode. The web service is `the-cornerstone` on Render (Docker, Ohio, deploys automatically from `main`) and the database is the Neon project "The Cornerstone" (us-east-2); the app reaches it through the pooled connection and runs migrations over the direct one. The first administrator's email and password are the `APP_ADMIN_EMAIL` and `APP_ADMIN_PASSWORD` values on the Render service's Environment page; change the password at `/account` after the first sign-in, then set the switch password at `/site`. The service is on Render's free plan, which sleeps after 15 minutes without visitors (the next visit takes up to a minute) and cannot send email; `render.yaml` names the smallest paid plan, which removes both limits. Email needs the `APP_SMTP_*` settings in `.env.example`; until they are set, password-reset and notification emails are only written to the log.
+
+**Tests.** `python -m pytest -q` runs 40 tests: the Act's rules, every role's desk, the whole program end to end, and the switch. CI runs them on SQLite and Postgres and checks that the Docker image builds and starts.
+
 ---
 
 # Foundation
