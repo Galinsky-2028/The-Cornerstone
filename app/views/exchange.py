@@ -84,12 +84,20 @@ def round_public(request: Request, round_id: int):
         sealed = r.status != "matched"
         rankings = []
         if not sealed:
-            for rk in s.scalars(select(Ranking).where(Ranking.round_id == r.id, Ranking.status == "submitted")).all():
-                rankings.append({"a": rk.association, "offers": [s.get(Offer, o).ref for o in rk.offer_ids if s.get(Offer, o)],
-                                 "priority": association_priority(s, rk.association_id),
-                                 "draw": tiebreak_key(r.random_seed, rk.association_id)[:12]})
+            from ..program import round_applicants
+
+            for e in round_applicants(s, r.id):
+                members = [s.get(Association, i) for i in e["association_ids"]]
+                rankings.append({"ref": e["ref"], "members": [m.ref for m in members if m] if e["consortium"] else [],
+                                 "offers": [s.get(Offer, o).ref for o in e["ranking"] if s.get(Offer, o)],
+                                 "priority": e["priority"], "draw": tiebreak_key(r.random_seed, e["key"])[:12],
+                                 "problem": e["problem"]})
         submitted = s.scalar(select(func.count()).select_from(Ranking).where(
             Ranking.round_id == r.id, Ranking.status == "submitted")) or 0
+        from ..models import Consortium
+
+        submitted += s.scalar(select(func.count()).select_from(Consortium).where(
+            Consortium.round_id == r.id, Consortium.status.in_(["approved", "matched", "failed", "excluded"]))) or 0
         matches = s.scalars(select(Match).where(Match.round_id == r.id)).all()
         return page(request, "exchange/round.html", {"r": r, "offers": offers, "sealed": sealed, "rankings": rankings,
                                                        "submitted": submitted, "matches": matches})

@@ -2,7 +2,7 @@
 {% block title %}Cornerstone Associations · The Cornerstone{% endblock %}
 {% block page %}
 <h1>Cornerstone Associations</h1>
-<p class="prose">Section 4. Certified workers form an association, which Labor charters. Enrollment then stays open for 180 days. Each certified claim is one founding unit: it cannot be bought, sold, pledged or transferred, and every member's vote counts the same. A roll needs between 2 and 2,500 units.</p>
+<p class="prose">Section 4. Certified workers form an association, which Labor charters. Enrollment then stays open for 180 days. Each certified claim is one founding unit: it cannot be bought, sold, pledged or transferred, and every member's vote counts the same. A roll needs between 2 and 2,500 units. A worker whose claim is still under review may elect an enrolling association as a cohort; the claim becomes a unit only if certified before the roll closes.</p>
 
 <section class="card">
   <h2>Associations</h2>
@@ -14,7 +14,11 @@
     <td>{% if row.a.status == 'enrolling' and free_claims %}
       <form method="post" action="/app/associations/{{ row.a.ref }}/join" class="row">{{ csrf_field(request) }}
         <select name="claim_ref" aria-label="Claim to enroll">{% for c in free_claims %}<option value="{{ c.ref }}">{{ c.ref }} ({{ c.event.ref }})</option>{% endfor %}</select>
-        <button class="btn small primary" type="submit">Join</button></form>{% endif %}</td></tr>
+        <button class="btn small primary" type="submit">Join</button></form>{% endif %}
+      {% if row.a.status == 'enrolling' and cohort_claims %}
+      <form method="post" action="/app/associations/{{ row.a.ref }}/join" class="row">{{ csrf_field(request) }}
+        <select name="claim_ref" aria-label="Claim under review">{% for c in cohort_claims %}<option value="{{ c.ref }}">{{ c.ref }} (under review)</option>{% endfor %}</select>
+        <button class="btn small" type="submit">Elect as a cohort</button></form>{% endif %}</td></tr>
   {% else %}<tr><td colspan="6" class="muted">No associations yet.</td></tr>{% endfor %}
   </table>
 </section>

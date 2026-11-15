@@ -243,6 +243,9 @@ class Membership(Base):
     user_id: Mapped[int] = mapped_column(Integer, index=True)
     on_board: Mapped[bool] = mapped_column(Boolean, default=False)
     opportunity: Mapped[str] = mapped_column(String(20), default="undecided")  # training | employment | franchise | owner_only | undecided
+    # s.4(a): founding = a certified claim holding one unit; cohort = a timely applicant whose eligibility is still under
+    # review, with no unit or vote until certified. The roll must be resolved before it closes.
+    status: Mapped[str] = mapped_column(String(20), default="founding", server_default="founding")
     joined_on: Mapped[date] = mapped_column(Date, default=date.today)
 
     association: Mapped[Association] = relationship(back_populates="members")
@@ -365,6 +368,30 @@ class Ranking(Base):
     association: Mapped[Association] = relationship()
 
 
+CONSORTIUM_STATUSES = ("pending_votes", "approved", "rejected", "excluded", "matched", "failed")
+
+
+class Consortium(Base):
+    """s.5(b): Associations may enter a round together only with each one's approval by a majority of all its
+    founding units (s.4(c)), unchanged founding rolls, and compliance with the published offer. Each constituent
+    keeps its own governance; the consortium's ranking is published with the others after the round."""
+
+    __tablename__ = "cs_consortia"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ref: Mapped[str] = mapped_column(String(20), unique=True)
+    name: Mapped[str] = mapped_column(String(300))
+    round_id: Mapped[int] = mapped_column(ForeignKey("cs_rounds.id", ondelete="CASCADE"), index=True)
+    association_ids: Mapped[list] = mapped_column(JSON)  # the proposing association first
+    offer_ids: Mapped[list] = mapped_column(JSON)  # the joint ranking, most preferred first
+    units_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)  # {association id: founding units} at proposal
+    ballot_ids: Mapped[list] = mapped_column(JSON, default=list)  # one approval ballot per constituent
+    compact_ballot_ids: Mapped[list] = mapped_column(JSON, default=list)  # one compact ballot per constituent
+    status: Mapped[str] = mapped_column(String(20), default="pending_votes")
+    created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_on: Mapped[date] = mapped_column(Date, default=date.today)
+    is_demo: Mapped[bool] = demo_col()
+
+
 class Match(Base):
     __tablename__ = "cs_matches"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -377,6 +404,7 @@ class Match(Base):
     extension_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # s.5(c): once, up to 90
     extension_reasons: Mapped[str] = mapped_column(Text, default="", server_default="")
     successor_of: Mapped[int | None] = mapped_column(Integer, nullable=True)  # the failed match this one follows
+    consortium_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # when a consortium holds the match
     is_demo: Mapped[bool] = demo_col()
 
     association: Mapped[Association] = relationship()

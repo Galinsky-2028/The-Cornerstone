@@ -135,14 +135,57 @@ def association_priority(s, association_id: int) -> date | None:
         select(Event.first_separation)
         .join(Claim, Claim.event_id == Event.id)
         .join(Membership, Membership.claim_id == Claim.id)
-        .where(Membership.association_id == association_id, Claim.status != "remedied",
-               Event.first_separation.is_not(None))
+        .where(Membership.association_id == association_id, Membership.status == "founding",
+               Claim.status != "remedied", Event.first_separation.is_not(None))
     ).scalars().all()
     return min(rows) if rows else None
 
 
 def founding_units(s, association_id: int) -> int:
+    """Units held by certified claims. Cohort applicants still under review hold none until certified."""
+    return s.scalar(select(func.count()).select_from(Membership).where(
+        Membership.association_id == association_id, Membership.status == "founding")) or 0
+
+
+def roll_size(s, association_id: int) -> int:
+    """Everyone on the roll, cohort applicants included (for the 2,500-unit ceiling)."""
     return s.scalar(select(func.count()).select_from(Membership).where(Membership.association_id == association_id)) or 0
+
+
+def round_applicants(s, round_id: int) -> list[dict]:
+    """Everyone entered in a round: associations with an approved sealed ranking, and approved consortia.
+
+    Each entry: key (the association id, or minus the consortium id), ref, association_ids, priority, ranking,
+    consortium (or None), and `problem` when it may not be entered (then it is left out of matching)."""
+    from .models import Consortium, Ranking
+
+    out = []
+    in_consortium: set[int] = set()
+    for c in s.scalars(select(Consortium).where(Consortium.round_id == round_id,
+                                                Consortium.status.in_(["approved", "matched", "failed"]))).all():
+        in_consortium.update(c.association_ids)
+        assocs = [s.get(Association, i) for i in c.association_ids]
+        pri = [p for p in (association_priority(s, a.id) for a in assocs if a) if p is not None]
+        problem = ""
+        if any(a is None or founding_units(s, a.id) != int((c.units_snapshot or {}).get(str(a.id), -1)) for a in assocs):
+            problem = "a founding roll changed after the consortium was approved"
+        elif c.status == "approved" and any(a.status != "roll_closed" for a in assocs):
+            problem = "a constituent is not free to be matched"
+        elif not pri:
+            problem = "no unremedied certified event"
+        out.append({"key": -c.id, "ref": c.ref, "association_ids": list(c.association_ids), "priority": min(pri) if pri else None,
+                    "ranking": list(c.offer_ids), "consortium": c, "problem": problem})
+    for rk in s.scalars(select(Ranking).where(Ranking.round_id == round_id, Ranking.status == "submitted")).all():
+        a = rk.association
+        p = association_priority(s, a.id)
+        problem = ""
+        if a.id in in_consortium:
+            problem = "the association entered this round as part of a consortium"
+        elif p is None:
+            problem = "no unremedied certified event"
+        out.append({"key": a.id, "ref": a.ref, "association_ids": [a.id], "priority": p, "ranking": list(rk.offer_ids),
+                    "consortium": None, "problem": problem, "status_ok": a.status == "roll_closed"})
+    return out
 
 
 def membership_of(s, user_id: int) -> Membership | None:
