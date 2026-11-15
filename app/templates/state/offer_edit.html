@@ -6,6 +6,7 @@
 {% if o and o.verification_notes %}<p class="notice warn">Commerce: {{ o.verification_notes }}</p>{% endif %}
 
 <form method="post" action="{{ '/state/offers/' ~ o.ref if o else '/state/offers/new' }}" class="card">{{ csrf_field(request) }}
+  <input type="hidden" name="offer_form" value="1">
   {% if not state %}<label>State<input name="state_name" required></label>{% else %}<p><strong>State:</strong> {{ state }}</p>{% endif %}
   {% macro field(name, label, rows=2, help='') %}
     <label>{{ label }}{% if help %} <span class="small">({{ help }})</span>{% endif %}
@@ -20,7 +21,12 @@
   {{ field('obligations', 'Regulatory and tax obligations', 2) }}
   {{ field('supervisor', 'Independent supervisor', 0) }}
   {{ field('negotiable_terms', 'Bounded menu of negotiable commercial terms', 3) }}
-  {{ field('federal_authorization', 'Federal authorization, if a federal prohibition applies', 2) }}
+  <label class="check"><input type="checkbox" name="federal_prohibition" value="1" {% if o and o.federal_prohibition %}checked{% endif %} {% if not editable %}disabled{% endif %}> A federal prohibition applies to this activity <span class="small">(section 7(a): it cannot be ranked until an Act of Congress expressly authorizes it and the designated regulator issues an authorization, which Commerce records and publishes)</span></label>
+  {{ field('federal_authorization', 'Notes on the federal position', 2) }}
+  <h3>Bundle of districts <span class="small">(section 5(c); leave empty for a single district)</span></h3>
+  {{ field('bundle_districts', 'Other districts in the bundle, one per line as "District: why it independently qualifies"', 3) }}
+  {{ field('bundle_finding', 'Independent feasibility finding that a single district cannot support a usable opportunity for the full membership', 3) }}
+  {{ field('bundle_finder', 'Independent reviewer who made the finding', 0) }}
   <div class="row">
     <label>State surplus share (% of positive surplus, fixed by general law)<input name="surplus_rate_pct" inputmode="numeric" value="{{ o.surplus_rate_pct if o else 3 }}" {% if not editable %}disabled{% endif %}></label>
     <label>Most founding units this enterprise can serve<input name="max_founding_units" inputmode="numeric" value="{{ o.max_founding_units if o else 2500 }}" {% if not editable %}disabled{% endif %}></label>

@@ -13,7 +13,7 @@
   <dt>Losses attributed</dt><dd>{{ e.attributed_losses }}</dd>
   <dt>Petitioned by</dt><dd>{{ e.petitioner_type.replace('_',' ') }} · filed {{ e.filed_on.strftime('%d %b %Y') }}</dd>
   <dt>Evidence period ends</dt><dd>{{ e.comment_ends.strftime('%d %b %Y') }}</dd>
-  <dt>Decision due</dt><dd>{{ e.decision_due.strftime('%d %b %Y') }}</dd>
+  <dt>Decision due</dt><dd>{{ e.decision_due.strftime('%d %b %Y') }}{% if e.extension_days %} · extended once by {{ e.extension_days }} days: {{ e.extension_reasons }}{% endif %}</dd>
   {% if e.census_id %}<dt>Census entry</dt><dd><a href="/census/{{ e.census_id }}">{{ e.census_id }}</a></dd>{% endif %}
 </dl>
 </section>
@@ -34,6 +34,13 @@
     {% endif %}
     <dt>Reasons</dt><dd>{{ e.decision_reasons }}</dd>
   </dl>
+</section>
+{% endif %}
+{% if subpoenas %}
+<section class="card"><h2>Subpoenas issued ({{ subpoenas|length }})</h2>
+  <table><tr><th>Recipient</th><th>Records required</th><th>Return by</th><th>Status</th></tr>
+  {% for sp in subpoenas %}<tr><td>{{ sp.recipient }}</td><td>{{ sp.records }}</td><td>{{ sp.return_by.strftime('%d %b %Y') }}</td><td><span class="status {{ sp.status }}">{{ sp.status }}</span></td></tr>{% endfor %}</table>
+  <p class="small muted">Records produced are not published.</p>
 </section>
 {% endif %}
 <section class="card">

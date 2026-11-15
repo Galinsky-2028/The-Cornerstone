@@ -10,7 +10,8 @@ from foundation.db import SessionLocal
 from .common import page
 
 from ..models import (
-    Association, Claim, Compact, Event, Match, Membership, Offer, QuarterlyReport, Ranking, Round, SupervisorDecision,
+    Association, Claim, Compact, Event, FederalAuthorization, Match, Membership, Offer, QuarterlyReport, Ranking, Round,
+    Subpoena, SupervisorDecision,
 )
 from ..program import association_priority, founding_units, is_preview, visible
 from ..rules import tiebreak_key
@@ -53,7 +54,9 @@ def event_public(request: Request, ref: str):
         comments = list(e.comments)
         certified = s.scalar(select(func.count()).select_from(Claim).where(
             Claim.event_id == e.id, Claim.status.in_(["certified", "remedied"]))) or 0
-        return page(request, "exchange/event.html", {"e": e, "comments": comments, "certified": certified})
+        subpoenas = s.scalars(select(Subpoena).where(Subpoena.event_id == e.id).order_by(Subpoena.id)).all()
+        return page(request, "exchange/event.html", {"e": e, "comments": comments, "certified": certified,
+                                                       "subpoenas": subpoenas})
 
 
 @router.get("/exchange/offers/{ref}", response_class=HTMLResponse)
@@ -62,7 +65,11 @@ def offer_public(request: Request, ref: str):
         o = s.scalar(visible(select(Offer), Offer).where(Offer.ref == ref, Offer.status != "draft"))
         if o is None:
             raise HTTPException(404, "No such published offer")
-        return page(request, "exchange/offer.html", {"o": o, "objections": list(o.objections)})
+        from ..rules import parse_bundle
+
+        fed = s.scalar(select(FederalAuthorization).where(FederalAuthorization.offer_id == o.id))
+        return page(request, "exchange/offer.html", {"o": o, "objections": list(o.objections), "fed": fed,
+                                                       "bundle": parse_bundle(o.bundle_districts)})
 
 
 @router.get("/exchange/rounds/{round_id}", response_class=HTMLResponse)

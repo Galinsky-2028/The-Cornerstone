@@ -8,21 +8,22 @@ The working website for the Cornerstone Livelihood Restoration Act, a Galinsky 2
 
 | Section | Who | What works |
 |---|---|---|
-| 2 Events | Workers, unions, States; Labor | Petitions, a 60-day public evidence period, certification with written findings (scope, causal period, first separation) |
+| 2 Events | Workers, unions, States; Labor | Petitions, a 60-day public evidence period, subpoenas for records with a public register, one extension of up to 90 days with public reasons, certification with written findings (scope, causal period, first separation) |
 | 3 Claims | Workers; Labor | Claims with the Act's tests applied as you file, evidence uploads, 90-day decisions, hearings within 60 days, one successor for a worker who died |
 | 4 Associations | Workers; Labor | Forming, chartering, 180-day enrollment, closed founding rolls of 2–2,500 units, ballots decided by a majority of all units |
-| 5 Exchange | States; Commerce; associations | Offers with a 60-day objection period and no-new-harm findings, verification, rounds with a public random seed, sealed rankings, association-proposing deferred acceptance by oldest unremedied event |
+| 5 Exchange | States; Commerce; associations | Offers with a 60-day objection period and no-new-harm findings, bundles of districts with an independent feasibility finding, no overlapping exclusive rights in a round, verification, rounds with a public random seed, sealed rankings, association-proposing deferred acceptance by oldest unremedied event, one negotiation extension of up to 90 days on the round's published conditions, and after a failed negotiation the offer passing to the next willing association while the unsuccessful one proceeds to its next choice |
 | 6 Compacts | States; members; supervisors | Drafting within the published menu, member approval, 30+10-year term, State surplus share, independent supervision decisions |
+| 7 Federal law | Commerce | A federally prohibited activity cannot be ranked until an Act of Congress, the displaced prohibitions, the regulator, activity, persons, territory, duration and safeguards are recorded and the regulator's authorization is issued with public findings |
 | 8 Founding Fund | Associations; Labor | Advances paid to providers, fixed repayment percentage by formula, quarterly remittances |
 | 9 Restoration | Labor | Five-condition findings, provisional then remedied, reopening |
 
 **Preview and the switch.** In preview mode every page says the Act is not law, `/preview` gives anyone a signed-in account in any of six roles inside an example world (rebuilt once a day: by the first visit of each UTC day, so it also works on a sleeping free service), and waiting periods can be skipped. An administrator turns the site to enacted mode at `/site`: preview accounts are switched off and signed out, example records are hidden, and the warnings disappear. The switch needs an administrator account, a separate switch password (stored as a hash; changeable only with the current one), and a typed confirmation phrase, in both directions. Attempts are rate-limited and audited, and every administrator is emailed when the mode changes.
 
-Code: `app/rules.py` (the Act's tests and formulas), `app/models.py`, `app/views/` (one module per role), `app/seed.py` (the example world), `tests/test_cornerstone.py`.
+Code: `app/rules.py` (the Act's tests and formulas), `app/models.py`, `app/views/` (one module per role), `app/seed.py` (the example world), `tests/test_cornerstone.py`, `tests/test_act_procedures.py`.
 
 **Where it runs.** https://the-cornerstone.onrender.com, in preview mode. The web service is `the-cornerstone` on Render (Docker, Ohio, deploys automatically from `main`) and the database is the Neon project "The Cornerstone" (us-east-2); the app reaches it through the pooled connection and runs migrations over the direct one. The first administrator's email and password are the `APP_ADMIN_EMAIL` and `APP_ADMIN_PASSWORD` values on the Render service's Environment page; change the password at `/account` after the first sign-in, then set the switch password at `/site`. The service is on Render's free plan, which sleeps after 15 minutes without visitors (the next visit takes up to a minute) and cannot send email; `render.yaml` names the smallest paid plan, which removes both limits. Email needs the `APP_SMTP_*` settings in `.env.example`; until they are set, password-reset and notification emails are only written to the log.
 
-**Tests.** `python -m pytest -q` runs 40 tests: the Act's rules, every role's desk, the whole program end to end, and the switch. CI runs them on SQLite and Postgres and checks that the Docker image builds and starts.
+**Tests.** `python -m pytest -q` runs the Act's rules, every role's desk, the whole program end to end, the switch, and the procedures of sections 2(c), 5(c) and 7(a) (`tests/test_act_procedures.py`). CI runs them on SQLite and Postgres and checks that the Docker image builds and starts.
 
 ---
 

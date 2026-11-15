@@ -19,8 +19,9 @@ from foundation import blobstore
 from foundation.models import User, WebSession
 
 from .models import (
-    Association, Ballot, Claim, ClaimDocument, Compact, DemoAccount, Event, EventComment, FundAdvance, Interest, Match, Membership,
-    Offer, OfferObjection, QuarterlyReport, Ranking, Restoration, RoleGrant, Round, SupervisorDecision, Vote,
+    Association, Ballot, Claim, ClaimDocument, Compact, DemoAccount, Event, EventComment, FederalAuthorization, FundAdvance,
+    Interest, Match, Membership,
+    Offer, OfferObjection, QuarterlyReport, Ranking, Restoration, RoleGrant, Round, Subpoena, SupervisorDecision, Vote,
 )
 from .rules import fund_remittance, fund_terms, state_share
 
@@ -51,7 +52,8 @@ PERSONAS = {
 }
 
 DEMO_TABLES = [Vote, Ballot, QuarterlyReport, SupervisorDecision, Restoration, FundAdvance, Compact, Match, Ranking,
-               OfferObjection, Offer, Round, Membership, Association, Claim, EventComment, Event, Interest]
+               FederalAuthorization, OfferObjection, Offer, Round, Membership, Association, Claim, EventComment, Subpoena,
+               Event, Interest]
 
 
 def _user(s, name: str, email: str) -> User:

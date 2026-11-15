@@ -14,13 +14,16 @@ from foundation.models import User
 
 from ..models import Ballot, Compact, FundAdvance, Match, Offer, OfferObjection
 from ..program import is_preview, next_ref, require_program_role, state_of, visible
-from ..rules import DRAFT_COMPACT_PUBLIC_DAYS, NEGOTIATION_DAYS, OBJECTION_DAYS, days_from, fund_terms
+from ..rules import (
+    DRAFT_COMPACT_PUBLIC_DAYS, NEGOTIATION_DAYS, OBJECTION_DAYS, bundle_problems, days_from, fund_terms, tiebreak_key,
+)
 from .common import clean, go, page, parse_date, preview_only, to_int
 
 router = APIRouter()
 official = require_program_role("state")
 OFFER_FIELDS = ("district", "trade", "prohibition", "lifting_authority", "enabling_law", "technical_requirements",
-                "obligations", "supervisor", "negotiable_terms", "no_new_harm", "federal_authorization")
+                "obligations", "supervisor", "negotiable_terms", "no_new_harm", "federal_authorization",
+                "bundle_districts", "bundle_finding", "bundle_finder")
 REQUIRED_TO_PUBLISH = ("district", "trade", "prohibition", "lifting_authority", "enabling_law", "technical_requirements",
                        "obligations", "supervisor", "negotiable_terms")
 
@@ -59,7 +62,10 @@ def offer_new_form(request: Request, user: User = Depends(official)):
 def _apply(o: Offer, form) -> None:
     for f in OFFER_FIELDS:
         if f in form:
-            setattr(o, f, clean(str(form.get(f, "")), 300 if f in ("district", "trade", "enabling_law", "supervisor") else 10_000))
+            setattr(o, f, clean(str(form.get(f, "")), 300 if f in ("district", "trade", "enabling_law", "supervisor",
+                                                                    "bundle_finder") else 10_000))
+    if "offer_form" in form:  # a checkbox sends nothing when cleared
+        o.federal_prohibition = bool(form.get("federal_prohibition"))
     if "surplus_rate_pct" in form:
         o.surplus_rate_pct = max(0, min(20, to_int(form.get("surplus_rate_pct"), 3)))
     if "max_founding_units" in form:
@@ -91,6 +97,7 @@ def offer_page(request: Request, ref: str, user: User = Depends(official)):
     with SessionLocal() as s:
         o = _offer(s, ref, user)
         missing = [f.replace("_", " ") for f in REQUIRED_TO_PUBLISH if not getattr(o, f)]
+        missing += bundle_problems(o.district, o.bundle_districts, o.bundle_finding, o.bundle_finder, o.state_name)
         return page(request, "state/offer_edit.html", {"o": o, "state": o.state_name, "objections": list(o.objections),
                                                         "missing": missing, "today": date.today(),
                                                         "editable": o.status == "draft"})
@@ -122,6 +129,9 @@ def open_objections(request: Request, ref: str, user: User = Depends(official)):
         missing = [f.replace("_", " ") for f in REQUIRED_TO_PUBLISH if not getattr(o, f)]
         if missing:
             raise HTTPException(400, "Complete the public record first: " + ", ".join(missing))
+        problems = bundle_problems(o.district, o.bundle_districts, o.bundle_finding, o.bundle_finder, o.state_name)
+        if problems:
+            raise HTTPException(400, " ".join(problems))
         o.status, o.objection_ends = "objection_period", days_from(date.today(), OBJECTION_DAYS)
         audit(s, "offer.open_objections", user.id, target=ref)
         s.commit()
@@ -293,6 +303,9 @@ def send_to_members(request: Request, match_id: int, user: User = Depends(offici
 
 @router.post("/state/matches/{match_id}/fail")
 def negotiation_failed(request: Request, match_id: int, reasons: str = Form(...), user: User = Depends(official)):
+    """s.5(c): a failed negotiation returns the offer to the next willing Association under the original rankings
+    and priorities, and the unsuccessful Association proceeds to its next choice. Successor matches go only to
+    still-unremedied Associations without another active match."""
     with SessionLocal() as s:
         m = _match(s, match_id, user)
         if m.status != "negotiating":
@@ -300,8 +313,69 @@ def negotiation_failed(request: Request, match_id: int, reasons: str = Form(...)
         if date.today() <= m.negotiation_deadline and not is_preview():
             raise HTTPException(400, f"Negotiation continues until {m.negotiation_deadline:%d %B %Y}.")
         m.status = "failed"
-        m.offer.status, m.offer.round_id = "verified", None
         m.association.status = "roll_closed"
         audit(s, "match.failed", user.id, target=m.offer.ref, reasons=clean(reasons, 2000))
+        s.flush()
+        offer_to, assoc_to = successor_matches(s, m)
+        if offer_to is None:
+            m.offer.status, m.offer.round_id = "verified", None
         s.commit()
-    return go("/state", "Negotiation ended. The offer returns to the Exchange for the next round, and the association may rank again.")
+    parts = ["Negotiation ended."]
+    parts.append(f"The offer passes to {offer_to.ref}, the next willing association under the round's rankings and priorities."
+                 if offer_to else "No other association that ranked the offer is free, so it returns to the Exchange.")
+    parts.append(f"The association is matched with its next choice, {assoc_to.ref}." if assoc_to
+                 else "The association has no remaining available choice in that round and may rank again.")
+    return go("/state", " ".join(parts))
+
+
+def successor_matches(s, failed: Match):
+    """Create the successor matches after `failed`. Returns (association the offer went to, offer the association
+    went to); either may be None."""
+    from ..models import Association, Ranking, Round
+    from ..program import association_priority
+
+    r = s.get(Round, failed.round_id)
+    failed_pairs = {(x.association_id, x.offer_id) for x in s.scalars(select(Match).where(
+        Match.round_id == r.id, Match.status == "failed")).all()}
+
+    def free(a: Association) -> bool:
+        active = s.scalar(select(Match.id).where(Match.association_id == a.id, Match.status.in_(["negotiating", "compacted"])))
+        return active is None and a.status == "roll_closed"
+
+    def new_match(a: Association, o: Offer) -> None:
+        p = association_priority(s, a.id) or failed.priority_date
+        s.add(Match(round_id=r.id, association_id=a.id, offer_id=o.id, priority_date=p,
+                    negotiation_deadline=days_from(date.today(), NEGOTIATION_DAYS), successor_of=failed.id,
+                    is_demo=failed.is_demo))
+        a.status, o.status = "matched", "matched"
+        s.flush()
+
+    rankings = s.scalars(select(Ranking).where(Ranking.round_id == r.id, Ranking.status == "submitted")).all()
+    # 1. the offer goes to the next willing association that ranked it, by priority and then the public draw
+    candidates = []
+    for rk in rankings:
+        a = rk.association
+        if failed.offer_id in (rk.offer_ids or []) and (a.id, failed.offer_id) not in failed_pairs and free(a):
+            p = association_priority(s, a.id)
+            if p is not None:
+                candidates.append((p, tiebreak_key(r.random_seed, a.id), a))
+    offer_to = None
+    if candidates:
+        offer_to = min(candidates, key=lambda c: (c[0], c[1]))[2]
+        new_match(offer_to, failed.offer)
+    # 2. the unsuccessful association proceeds to its next choice that is still available
+    assoc_to = None
+    rk = next((x for x in rankings if x.association_id == failed.association_id), None)
+    a = failed.association
+    if rk and free(a):
+        ids = list(rk.offer_ids or [])
+        after = ids[ids.index(failed.offer_id) + 1:] if failed.offer_id in ids else []
+        for oid in after:
+            o = s.get(Offer, oid)
+            taken = s.scalar(select(Match.id).where(Match.offer_id == oid, Match.status.in_(["negotiating", "compacted"])))
+            if o is not None and o.status == "verified" and o.round_id == r.id and taken is None \
+                    and (a.id, oid) not in failed_pairs:
+                new_match(a, o)
+                assoc_to = o
+                break
+    return offer_to, assoc_to

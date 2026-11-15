@@ -112,9 +112,34 @@ class Event(Base):
     decision_reasons: Mapped[str] = mapped_column(Text, default="")
     decided_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     decided_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # s.2(c): one extension of not more than 90 days, with public reasons
+    extension_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    extension_reasons: Mapped[str] = mapped_column(Text, default="", server_default="")
     is_demo: Mapped[bool] = demo_col()
 
     comments: Mapped[list["EventComment"]] = relationship(back_populates="event", cascade="all, delete-orphan")
+
+
+SUBPOENA_STATUSES = ("issued", "complied", "contested", "withdrawn", "referred")
+
+
+class Subpoena(Base):
+    """s.2(c): Labor may require relevant records by subpoena, enforceable in United States district court,
+    subject to privilege and applicable privacy law. The register shows that a subpoena issued and what it seeks;
+    the records produced stay private."""
+
+    __tablename__ = "cs_subpoenas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("cs_events.id", ondelete="CASCADE"), index=True)
+    recipient: Mapped[str] = mapped_column(String(300))
+    records: Mapped[str] = mapped_column(Text)  # the records required
+    relevance: Mapped[str] = mapped_column(Text)  # why they are relevant to a material dispute
+    return_by: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(20), default="issued")
+    response: Mapped[str] = mapped_column(Text, default="")  # compliance, privilege or privacy objection, referral
+    issued_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    issued_on: Mapped[date] = mapped_column(Date, default=date.today)
+    is_demo: Mapped[bool] = demo_col()
 
 
 class EventComment(Base):
@@ -277,7 +302,12 @@ class Offer(Base):
     negotiable_terms: Mapped[str] = mapped_column(Text, default="")
     no_new_harm: Mapped[str] = mapped_column(Text, default="")
     label: Mapped[str] = mapped_column(String(20), default="cornerstone")  # cornerstone | garden | both
-    federal_authorization: Mapped[str] = mapped_column(Text, default="")  # blank if no federal prohibition
+    federal_authorization: Mapped[str] = mapped_column(Text, default="")  # the State's notes; the record is FederalAuthorization
+    federal_prohibition: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")  # s.7(a)
+    # s.5(c): a bundle of districts, each independently qualifying, with an independent feasibility finding
+    bundle_districts: Mapped[str] = mapped_column(Text, default="", server_default="")  # one "District: why it qualifies" per line
+    bundle_finding: Mapped[str] = mapped_column(Text, default="", server_default="")
+    bundle_finder: Mapped[str] = mapped_column(String(300), default="", server_default="")
     max_founding_units: Mapped[int] = mapped_column(Integer, default=2500)
     status: Mapped[str] = mapped_column(String(20), default="draft")
     objection_ends: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -308,6 +338,8 @@ class Round(Base):
     rankings_close: Mapped[date] = mapped_column(Date)
     random_seed: Mapped[str] = mapped_column(String(64))  # the publicly witnessed draw, fixed when the round opens
     status: Mapped[str] = mapped_column(String(20), default="open")  # open | matched
+    # s.5(c): the readiness conditions on which any match in this round may have one extension of up to 90 days
+    extension_conditions: Mapped[str] = mapped_column(Text, default="", server_default="")
     match_log: Mapped[list | None] = mapped_column(JSON, nullable=True)  # published step-by-step matching record
     matched_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -342,9 +374,42 @@ class Match(Base):
     priority_date: Mapped[date] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(20), default="negotiating")  # negotiating | compacted | failed
     negotiation_deadline: Mapped[date] = mapped_column(Date)
+    extension_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # s.5(c): once, up to 90
+    extension_reasons: Mapped[str] = mapped_column(Text, default="", server_default="")
+    successor_of: Mapped[int | None] = mapped_column(Integer, nullable=True)  # the failed match this one follows
     is_demo: Mapped[bool] = demo_col()
 
     association: Mapped[Association] = relationship()
+    offer: Mapped[Offer] = relationship()
+
+
+FEDERAL_STATUSES = ("pending", "issued", "denied")
+
+
+class FederalAuthorization(Base):
+    """s.7(a): before a federally prohibited activity may be ranked, an Act of Congress must expressly authorize
+    it, name each displaced federal prohibition and the administering regulator, and prescribe the activity,
+    persons, territory, duration and safeguards; the regulator issues or denies on those criteria with public
+    findings, and Commerce publishes the authorization and its limits."""
+
+    __tablename__ = "cs_federal_authorizations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    offer_id: Mapped[int] = mapped_column(ForeignKey("cs_offers.id", ondelete="CASCADE"), unique=True)
+    act_citation: Mapped[str] = mapped_column(String(300), default="")
+    displaced_prohibitions: Mapped[str] = mapped_column(Text, default="")
+    regulator: Mapped[str] = mapped_column(String(300), default="")
+    activity: Mapped[str] = mapped_column(Text, default="")
+    persons: Mapped[str] = mapped_column(Text, default="")
+    territory: Mapped[str] = mapped_column(Text, default="")
+    starts_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ends_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    safeguards: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    findings: Mapped[str] = mapped_column(Text, default="")  # the regulator's public findings
+    decided_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    recorded_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_demo: Mapped[bool] = demo_col()
+
     offer: Mapped[Offer] = relationship()
 
 
