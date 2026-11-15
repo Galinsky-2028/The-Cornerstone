@@ -14,7 +14,7 @@ from foundation.db import SessionLocal, audit
 from foundation.models import User
 
 from ..models import (
-    FUND_CATEGORIES, Association, Ballot, Claim, Compact, Consortium, DemoAccount, FundAdvance, Match, Membership, Offer,
+    AUDIT_OPINIONS, FUND_CATEGORIES, AuditReport, Association, Ballot, Claim, Compact, Consortium, DemoAccount, FundAdvance, Match, Membership, Offer,
     QuarterlyReport, Ranking, Restoration, Round, SupervisorDecision, Vote,
 )
 from ..program import association_priority, founding_units, is_preview, next_ref, roll_size, visible
@@ -60,6 +60,16 @@ def tally(s, b: Ballot) -> dict:
     return {"yes": yes, "no": no, "units": units, "needed": votes_needed(units), "outcome": ballot_outcome(yes, no, units)}
 
 
+def _restoration_for(s, association_id: int, k: Compact) -> None:
+    """Open the restoration record for a newly executed compact. An association that returned to the Exchange
+    (s.9(a)) keeps its record, including its count of preopening failures."""
+    r = s.scalar(select(Restoration).where(Restoration.association_id == association_id))
+    if r is None:
+        s.add(Restoration(association_id=association_id, compact_id=k.id, checks={}, status="pending", is_demo=k.is_demo))
+    elif r.status in ("returned", "failed_preopening", "reopened"):
+        r.compact_id, r.status, r.checks, r.launch_deadline = k.id, "pending", {}, None
+
+
 def settle_ballot(s, b: Ballot, closing: bool = False) -> str:
     """Apply a ballot's result once it is decided. A ballot still open at its close fails: the Act requires a
     majority of all founding units, so abstention counts against."""
@@ -94,8 +104,7 @@ def settle_ballot(s, b: Ballot, closing: bool = False) -> str:
                 k.offer.status, k.match.status = "compacted", "compacted"
                 for aid in c.association_ids:
                     s.get(Association, aid).status = "compact"
-                    if s.scalar(select(Restoration).where(Restoration.association_id == aid)) is None:
-                        s.add(Restoration(association_id=aid, compact_id=k.id, checks={}, status="pending", is_demo=k.is_demo))
+                    _restoration_for(s, aid, k)
             elif outcome == "failed":
                 k.status = "drafting"
                 for i in c.compact_ballot_ids:
@@ -109,9 +118,7 @@ def settle_ballot(s, b: Ballot, closing: bool = False) -> str:
                 k.association.status = "compact"
                 k.offer.status = "compacted"
                 k.match.status = "compacted"
-                if s.scalar(select(Restoration).where(Restoration.association_id == k.association_id)) is None:
-                    s.add(Restoration(association_id=k.association_id, compact_id=k.id, checks={}, status="pending",
-                                      is_demo=k.is_demo))
+                _restoration_for(s, k.association_id, k)
             else:
                 k.status = "drafting"
     audit(s, "ballot.settle", None, target=str(b.id), outcome=outcome, **{k: v for k, v in t.items() if k != "outcome"})
@@ -226,7 +233,9 @@ def association_page(request: Request, ref: str, user: User = Depends(require_us
                      if a.id in (c.association_ids or [])]
         assoc_refs = {x.id: x.ref for x in s.scalars(visible(select(Association), Association)).all()}
         cohort = [m for m in members if m.status == "cohort"]
+        audits = s.scalars(select(AuditReport).where(AuditReport.association_id == a.id).order_by(AuditReport.year.desc())).all()
         return page(request, "assoc/detail.html", {
+            "audits": audits, "audit_opinions": AUDIT_OPINIONS,
             "consortia": consortia, "assoc_refs": assoc_refs, "cohort": cohort,
             "a": a, "member": me, "members": members, "units": len(members) - len(cohort), "ballots": ballot_rows,
             "open_rounds": open_rounds, "round_offers": round_offers, "rankings": rankings, "offer_refs": offer_refs, "round_names": round_names,
@@ -528,3 +537,39 @@ def supervision_request(request: Request, ref: str, kind: str = Form(...), body:
         audit(s, "supervision.request", user.id, target=k.ref, kind=kind)
         s.commit()
     return go(f"/app/associations/{ref}#supervision", "Sent to the independent supervisor. The decision will be public.")
+
+
+# --------------------------------------------------------------------------
+# Section 9(b): annual independent audits and disclosures
+# --------------------------------------------------------------------------
+@router.post("/app/associations/{ref}/audits")
+def submit_audit(request: Request, ref: str, year: str = Form(...), auditor: str = Form(...),
+                 financial_opinion: str = Form(...), beneficiary_control: str = Form(""),
+                 no_political_contributions: str = Form(""), investor_rights: str = Form(""),
+                 beneficial_ownership: str = Form(""), summary: str = Form(...), user: User = Depends(require_user)):
+    if financial_opinion not in AUDIT_OPINIONS:
+        raise HTTPException(400)
+    y = to_int(year)
+    with SessionLocal() as s:
+        a = _assoc(s, ref)
+        _board(s, a, user)
+        if a.status in ("chartering", "charter_refused"):
+            raise HTTPException(400, "Audits begin once the association is chartered.")
+        if not 1900 <= y <= date.today().year:
+            raise HTTPException(400, "Audits cover a completed year.")
+        name = clean(auditor, 300)
+        if not name or name.lower() == a.name.lower():
+            raise HTTPException(400, "Name the independent auditor.")
+        if len(summary.strip()) < 40 or not beneficial_ownership.strip():
+            raise HTTPException(400, "Publish the audit summary and the beneficial ownership disclosure.")
+        if s.scalar(select(AuditReport).where(AuditReport.association_id == a.id, AuditReport.year == y)):
+            raise HTTPException(400, f"The {y} audit is already published.")
+        s.add(AuditReport(association_id=a.id, year=y, auditor=name, financial_opinion=financial_opinion,
+                          beneficiary_control=bool(beneficiary_control), no_political_contributions=bool(no_political_contributions),
+                          investor_rights=clean(investor_rights), beneficial_ownership=clean(beneficial_ownership),
+                          summary=clean(summary), submitted_by=user.id, is_demo=is_preview()))
+        audit(s, "association.audit", user.id, target=ref, year=y, opinion=financial_opinion,
+              beneficiary_control=bool(beneficiary_control))
+        s.commit()
+    warn = "" if beneficiary_control else " The audit does not confirm beneficiary control; the Exchange shows that."
+    return go(f"/app/associations/{ref}#audits", f"The {y} audit summary and disclosures are published on the Exchange.{warn}")

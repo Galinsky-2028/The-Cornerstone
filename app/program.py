@@ -195,3 +195,26 @@ def membership_of(s, user_id: int) -> Membership | None:
 
 def today() -> date:
     return utcnow().date()
+
+
+# --------------------------------------------------------------------------
+# Section 9(b): disclosed conflicts bar the official from deciding
+# --------------------------------------------------------------------------
+def require_not_recused(s, user: User, association_id: int | None = None, offer_id: int | None = None) -> None:
+    from fastapi import HTTPException
+
+    from .models import ConflictDisclosure
+
+    conds = []
+    if association_id is not None:
+        conds.append(ConflictDisclosure.association_id == association_id)
+    if offer_id is not None:
+        conds.append(ConflictDisclosure.offer_id == offer_id)
+    if not conds:
+        return
+    from sqlalchemy import or_
+
+    hit = s.scalar(select(ConflictDisclosure.id).where(ConflictDisclosure.user_id == user.id, or_(*conds),
+                                                       ConflictDisclosure.is_demo.is_(is_preview())).limit(1))
+    if hit is not None:
+        raise HTTPException(403, "You disclosed a conflict in this matter and are recused from deciding it (section 9(b)).")

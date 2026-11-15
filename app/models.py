@@ -563,7 +563,57 @@ class Restoration(Base):
     operations_began_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     decided_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     decided_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # s.9(a): the published launch deadline; one chance to revise or return after a first preopening failure;
+    # a second leaves claims open with no automatic right to another advance
+    launch_deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    preopening_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    revised_plan: Mapped[str] = mapped_column(Text, default="", server_default="")
+    no_automatic_advance: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    reopen_ground: Mapped[str] = mapped_column(String(40), default="", server_default="")
     is_demo: Mapped[bool] = demo_col()
 
     association: Mapped[Association] = relationship()
     compact: Mapped[Compact] = relationship()
+
+
+AUDIT_OPINIONS = {"unqualified": "Unqualified (clean)", "qualified": "Qualified", "adverse": "Adverse",
+                  "disclaimer": "Disclaimer of opinion"}
+
+
+class AuditReport(Base):
+    """s.9(b): an Association's annual independent financial and beneficiary-control audit, with the disclosures the
+    Exchange publishes: material investor rights, beneficial ownership and the audit summary."""
+
+    __tablename__ = "cs_audit_reports"
+    __table_args__ = (UniqueConstraint("association_id", "year"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    association_id: Mapped[int] = mapped_column(ForeignKey("cs_associations.id", ondelete="CASCADE"), index=True)
+    year: Mapped[int] = mapped_column(Integer)
+    auditor: Mapped[str] = mapped_column(String(300))
+    financial_opinion: Mapped[str] = mapped_column(String(20))
+    beneficiary_control: Mapped[bool] = mapped_column(Boolean, default=False)  # members keep all voting control
+    no_political_contributions: Mapped[bool] = mapped_column(Boolean, default=False)
+    investor_rights: Mapped[str] = mapped_column(Text, default="")
+    beneficial_ownership: Mapped[str] = mapped_column(Text, default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    submitted_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    submitted_on: Mapped[date] = mapped_column(Date, default=date.today)
+    is_demo: Mapped[bool] = demo_col()
+
+    association: Mapped[Association] = relationship()
+
+
+class ConflictDisclosure(Base):
+    """s.9(b): decisionmakers disclose conflicts and recuse. A disclosure bars its author from deciding any matter of
+    that Association or offer; the register is public."""
+
+    __tablename__ = "cs_conflicts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    official_name: Mapped[str] = mapped_column(String(200), default="")
+    role: Mapped[str] = mapped_column(String(20), default="")
+    association_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    offer_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    nature: Mapped[str] = mapped_column(Text)
+    created_on: Mapped[date] = mapped_column(Date, default=date.today)
+    is_demo: Mapped[bool] = demo_col()

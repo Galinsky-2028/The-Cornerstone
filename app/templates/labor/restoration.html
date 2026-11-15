@@ -10,6 +10,7 @@
 <form method="post" action="/labor/restorations/{{ a.ref }}/provisional" class="card">{{ csrf_field(request) }}
   <h2>Conditions</h2>
   {% for key, text in checks.items() %}<label><input type="checkbox" name="{{ key }}" value="1" {% if r and r.checks and r.checks.get(key) %}checked{% endif %} {% if r and r.status == 'remedied' %}disabled{% endif %}> {{ text }}</label>{% endfor %}
+  <label>Published launch deadline by which capital must be secured<input type="date" name="launch_deadline" value="{{ r.launch_deadline.isoformat() if r and r.launch_deadline else '' }}"></label>
   <label>Findings<textarea name="findings" rows="4">{{ r.findings if r else '' }}</textarea></label>
   {% if not r or r.status in ['pending', 'reopened', 'provisional'] %}<button class="btn primary" type="submit">Record the findings</button>{% endif %}
 </form>
@@ -22,11 +23,25 @@
   <button class="btn primary" type="submit">Mark {{ claims|length }} claims remedied</button>
 </form>
 {% endif %}
+{% if r and r.status == 'provisional' %}
+<form method="post" action="/labor/restorations/{{ a.ref }}/preopening-failure" class="card">{{ csrf_field(request) }}
+  <h2>Capital not secured by the launch deadline</h2>
+  <p class="small muted">Section 9(a). Launch deadline: {{ r.launch_deadline.strftime('%d %B %Y') if r.launch_deadline else 'not recorded' }}. Preopening failures so far: {{ r.preopening_failures }}. After a first failure the association has one opportunity to revise its plan within the offer or return to the Exchange without losing claims or original priority. A second failure leaves the claims open but creates no automatic right to another advance.{% if r.launch_deadline and today <= r.launch_deadline and is_preview() %} Preview: you may record it before the deadline.{% endif %}</p>
+  {% if r.preopening_failures == 0 %}<label>The association's choice<select name="choice"><option value="revise">Revise its plan within the offer</option><option value="return">Return to the Exchange</option></select></label>
+  <label>Revised plan (if revising)<textarea name="revised_plan" rows="2"></textarea></label>
+  <label>New launch deadline (if revising)<input type="date" name="new_launch_deadline"></label>{% endif %}
+  <label>Findings<textarea name="reasons" rows="2" required></textarea></label>
+  <button class="btn" type="submit">Record the {{ 'first' if r.preopening_failures == 0 else 'second' }} preopening failure</button></form>
+{% endif %}
 {% if r and r.status in ['provisional', 'remedied'] %}
 <form method="post" action="/labor/restorations/{{ a.ref }}/reopen" class="card danger-zone">{{ csrf_field(request) }}
-  <h2>Reopen</h2><label>Reasons<textarea name="reasons" rows="2" required></textarea></label>
+  <h2>Reopen</h2>
+  <p class="small muted">Section 9(a): only governmental withdrawal, judicial invalidation or other governmental defeat of the compact right reopens claims, on findings about the final action or judgment. These do not: {% for k, v in not_reopen_grounds.items() %}{{ v|lower }}{% if not loop.last %}; {% endif %}{% endfor %}.</p>
+  <label>Ground<select name="ground">{% for k, v in reopen_grounds.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+  <label>Findings on the final action or judgment<textarea name="reasons" rows="2" required></textarea></label>
   <button class="btn danger" type="submit">Reopen the restoration</button></form>
 {% endif %}
+{% if r and r.no_automatic_advance %}<p class="notice warn">No automatic right to another Founding Fund advance (section 9(a)). Any further advance needs written reasons.</p>{% endif %}
 {% endif %}
 <section class="card"><h2>Members' claims</h2>
   <table><tr><th>Claim</th><th>Event</th><th>Status</th></tr>{% for c in claims %}<tr><td><a href="/labor/claims/{{ c.ref }}">{{ c.ref }}</a></td><td>{{ c.event.ref }}</td><td><span class="status {{ c.status }}">{{ c.status }}</span></td></tr>{% endfor %}</table>

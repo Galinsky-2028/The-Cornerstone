@@ -12,7 +12,7 @@ from foundation.db import SessionLocal, audit
 from foundation.models import User
 
 from ..models import Compact, Offer, SupervisorDecision
-from ..program import is_preview, require_program_role, state_of, visible
+from ..program import is_preview, require_not_recused, require_program_role, state_of, visible
 from .common import clean, go, page
 
 router = APIRouter(prefix="/supervisor")
@@ -46,6 +46,7 @@ def decide(request: Request, did: int, decision: str = Form(...), reasons: str =
             raise HTTPException(404)
         if d.decision != "pending":
             raise HTTPException(400, "Already decided.")
+        require_not_recused(s, user, association_id=d.compact.association_id, offer_id=d.compact.offer_id)
         d.decision, d.reasons, d.decided_by, d.decided_on = decision, clean(reasons), user.id, date.today()
         audit(s, f"supervision.{decision}", user.id, target=d.compact.ref, kind=d.kind)
         s.commit()

@@ -1,0 +1,17 @@
+{% extends "layout.html" %}
+{% block title %}Conflicts and recusal · The Cornerstone{% endblock %}
+{% block page %}
+<h1>Conflicts and recusal</h1>
+<p class="prose">Section 9(b): decisionmakers disclose conflicts and recuse. A disclosure is published on the Exchange at once and bars you from deciding any matter of that association or offer. For two years after personally and substantially deciding a compact matter, you may not accept compensated work from its association or investors concerning that matter.</p>
+<form method="post" action="/app/conflicts" class="card">{{ csrf_field(request) }}
+  <div class="row">
+    <label>Association or offer (A-… or O-…)<input name="matter" required></label>
+    <label>Your role<select name="role">{% for k, v in roles.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+  </div>
+  <label>Nature of the conflict<textarea name="nature" rows="3" required></textarea></label>
+  <button class="btn primary" type="submit">Disclose and recuse</button>
+</form>
+<section class="card"><h2>Your disclosures</h2>
+  {% for d in mine %}<p><strong>{{ refs.get(d.id, '') }}</strong> · {{ d.created_on.strftime('%d %b %Y') }}<br>{{ d.nature }}</p>{% else %}<p class="muted">None.</p>{% endfor %}
+</section>
+{% endblock %}

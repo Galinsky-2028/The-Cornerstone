@@ -2,6 +2,8 @@
 identifiers, offers, matching rules and results, compacts, supervision decisions and audit summaries."""
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select
@@ -40,7 +42,17 @@ def exchange(request: Request):
                               .where(SupervisorDecision.decision != "pending").order_by(SupervisorDecision.id.desc()).limit(20)).all()
         reports = s.scalars(visible(select(QuarterlyReport), QuarterlyReport).order_by(QuarterlyReport.id.desc()).limit(20)).all()
         compact_refs = {c.id: c.ref for c in s.scalars(select(Compact)).all()}
+        from ..models import AuditReport, ConflictDisclosure
+        from .conflicts import _refs
+
+        audits = s.scalars(visible(select(AuditReport), AuditReport).order_by(AuditReport.id.desc()).limit(30)).all()
+        last_year = date.today().year - 1
+        audits_overdue = sorted({c.association.ref for c in compacts if c.executed_on and c.executed_on.year <= last_year
+                                 and not s.scalar(select(AuditReport.id).where(AuditReport.association_id == c.association_id,
+                                                                              AuditReport.year >= last_year))})
+        conflicts = s.scalars(visible(select(ConflictDisclosure), ConflictDisclosure).order_by(ConflictDisclosure.id.desc())).all()
         return page(request, "exchange/index.html", {
+            "audits": audits, "audits_overdue": audits_overdue, "conflicts": conflicts, "conflict_refs": _refs(s, conflicts),
             "events": events, "claims_by_event": claims_by_event, "assocs": assoc_rows, "offers": offers,
             "rounds": rounds, "compacts": compacts, "decisions": decisions, "reports": reports, "compact_refs": compact_refs})
 
@@ -117,6 +129,23 @@ def compact_public(request: Request, ref: str):
                             .order_by(QuarterlyReport.quarter)).all()
         repaid = sum(r.fund_remittance for r in reports)
         dates = compact_dates(c.operative_on) if c.operative_on else None
-        return page(request, "exchange/compact.html", {"c": c, "decisions": decisions, "reports": reports,
+        from foundation.models import User
+
+        from ..models import Restoration
+        from ..rules import cooling_off_ends
+
+        deciders = []
+        for d in decisions:
+            if d.decided_by and d.decided_on:
+                deciders.append(("supervision decision", d.decided_by, d.decided_on))
+        for rr in s.scalars(select(Restoration).where(Restoration.compact_id == c.id)).all():
+            if rr.decided_by and rr.decided_on:
+                deciders.append(("restoration finding", rr.decided_by, rr.decided_on))
+        people = []
+        for what, uid, on in deciders:
+            u = s.get(User, uid)
+            people.append({"name": (u.name or "An official") if u else "An official", "what": what, "on": on,
+                           "until": cooling_off_ends(on)})
+        return page(request, "exchange/compact.html", {"c": c, "decisions": decisions, "reports": reports, "deciders": people,
                                                          "repaid": repaid, "dates": dates,
                                                          "units": founding_units(s, c.association_id)})

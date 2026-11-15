@@ -15,8 +15,11 @@ from ..models import (
     FUND_CATEGORIES, RESTORATION_CHECKS, SUBPOENA_STATUSES, Association, Claim, Compact, Event, FundAdvance, Membership,
     Restoration, Subpoena,
 )
-from ..program import founding_units, is_preview, require_program_role, visible
-from ..rules import ENROLLMENT_DAYS, MAX_EXTENSION_DAYS, days_from, extension_problem
+from ..program import founding_units, is_preview, require_not_recused, require_program_role, visible
+from ..rules import (
+    ENROLLMENT_DAYS, MAX_EXTENSION_DAYS, NOT_REOPEN_GROUNDS, REOPEN_GROUNDS, days_from, extension_problem,
+    preopening_outcome, reopen_problem,
+)
 from .common import clean, go, page, parse_date, preview_only, to_int
 from .worker import DOC_KINDS, SEPARATIONS, WORK_TYPES, _assess
 
@@ -241,6 +244,7 @@ def charter(request: Request, ref: str, decision: str = Form("approve"), reasons
         a = s.scalar(visible(select(Association), Association).where(Association.ref == ref))
         if a is None or a.status != "chartering":
             raise HTTPException(404)
+        require_not_recused(s, user, association_id=a.id)
         if decision == "approve":
             t = date.today()
             a.status, a.chartered_on, a.enrollment_opens, a.enrollment_closes = "enrolling", t, t, days_from(t, ENROLLMENT_DAYS)
@@ -266,6 +270,11 @@ def fund_action(request: Request, advance_id: int, action: str = Form(...), reas
         allowed = {"requested": {"approve", "reject"}, "approved": {"disburse"}}
         if action not in allowed.get(f.status, set()):
             raise HTTPException(400, "That step is not available for this advance.")
+        require_not_recused(s, user, association_id=f.association_id)
+        r = s.scalar(select(Restoration).where(Restoration.association_id == f.association_id))
+        if action == "approve" and r is not None and r.no_automatic_advance and len(reasons.strip()) < 20:
+            raise HTTPException(400, "Section 9(a): after a second preopening failure or a reopening there is no automatic "
+                                     "right to another advance. Approving one needs written reasons.")
         f.status = {"approve": "approved", "reject": "rejected", "disburse": "disbursed"}[action]
         f.reasons, f.decided_by = clean(reasons) or f.reasons, user.id
         audit(s, f"fund.{f.status}", user.id, target=f.association.ref, amount=f.amount, category=f.category)
@@ -281,7 +290,9 @@ def _restoration(s, ref: str) -> tuple[Association, Restoration | None, Compact 
     if a is None:
         raise HTTPException(404)
     r = s.scalar(select(Restoration).where(Restoration.association_id == a.id))
-    k = s.scalar(select(Compact).where(Compact.association_id == a.id, Compact.status == "executed"))
+    k = s.get(Compact, r.compact_id) if r is not None else None
+    if k is None or k.status != "executed":
+        k = s.scalar(select(Compact).where(Compact.association_id == a.id, Compact.status == "executed"))
     return a, r, k
 
 
@@ -291,7 +302,8 @@ def restoration_page(request: Request, ref: str, user: User = Depends(labor)):
         a, r, k = _restoration(s, ref)
         claims = [m.claim for m in s.scalars(select(Membership).where(Membership.association_id == a.id)).all()]
         return page(request, "labor/restoration.html", {"a": a, "r": r, "k": k, "checks": RESTORATION_CHECKS,
-                                                         "claims": claims})
+                                                         "claims": claims, "reopen_grounds": REOPEN_GROUNDS,
+                                                         "not_reopen_grounds": NOT_REOPEN_GROUNDS, "today": date.today()})
 
 
 @router.post("/restorations/{ref}/provisional")
@@ -301,6 +313,7 @@ async def restoration_provisional(request: Request, ref: str, user: User = Depen
         a, r, k = _restoration(s, ref)
         if k is None:
             raise HTTPException(400, "Restoration requires an executed compact.")
+        require_not_recused(s, user, association_id=a.id)
         checks = {key: bool(form.get(key)) for key in RESTORATION_CHECKS}
         if r is None:
             r = Restoration(association_id=a.id, compact_id=k.id, is_demo=a.is_demo)
@@ -310,6 +323,10 @@ async def restoration_provisional(request: Request, ref: str, user: User = Depen
             r.status = "pending"
             msg = "Recorded. Restoration cannot be found until every condition is met."
         else:
+            if not form.get("launch_deadline") and r.launch_deadline is None:
+                raise HTTPException(400, "Record the published launch deadline by which capital must be secured (section 9(a)).")
+            if form.get("launch_deadline"):
+                r.launch_deadline = parse_date(str(form.get("launch_deadline")), "launch deadline")
             r.status, r.decided_by, r.decided_on = "provisional", user.id, date.today()
             a.status = "restoration_provisional"
             msg = "Provisional restoration found. Claims are marked remedied when financing is secured and operations begin."
@@ -325,6 +342,7 @@ def restoration_remedied(request: Request, ref: str, operations_began_on: str = 
         a, r, k = _restoration(s, ref)
         if r is None or r.status != "provisional":
             raise HTTPException(400, "A provisional restoration finding comes first.")
+        require_not_recused(s, user, association_id=a.id)
         if not financing_secured:
             raise HTTPException(400, "Confirm that financing has been secured.")
         r.financing_secured, r.operations_began_on = True, parse_date(operations_began_on, "date operations began")
@@ -342,17 +360,85 @@ def restoration_remedied(request: Request, ref: str, operations_began_on: str = 
 
 
 @router.post("/restorations/{ref}/reopen")
-def restoration_reopen(request: Request, ref: str, reasons: str = Form(...), user: User = Depends(labor)):
+def restoration_reopen(request: Request, ref: str, reasons: str = Form(...), ground: str = Form(""),
+                       user: User = Depends(labor)):
+    """s.9(a): governmental withdrawal, judicial invalidation or other governmental defeat of the compact right
+    reopens the affected claims on findings; ordinary commercial failure, cost or demand changes, and lawful
+    enforcement for the Association's material violation do not. No duplicate advance follows automatically."""
+    problem = reopen_problem(ground)
+    if problem:
+        raise HTTPException(400, problem)
+    if len(reasons.strip()) < 20:
+        raise HTTPException(400, "State the findings on the final action or judgment.")
     with SessionLocal() as s:
         a, r, k = _restoration(s, ref)
         if r is None or r.status not in ("provisional", "remedied"):
             raise HTTPException(400)
-        r.status = "reopened"
-        r.findings = (r.findings + f"\n\nReopened {date.today():%d %B %Y}: " + clean(reasons)).strip()
+        require_not_recused(s, user, association_id=a.id)
+        r.status, r.reopen_ground, r.no_automatic_advance = "reopened", ground, True
+        r.findings = (r.findings + f"\n\nReopened {date.today():%d %B %Y} ({REOPEN_GROUNDS[ground]}): " + clean(reasons)).strip()
         a.status = "compact" if k else "roll_closed"
         for m in s.scalars(select(Membership).where(Membership.association_id == a.id)).all():
             if m.claim.status == "remedied":
                 m.claim.status = "reopened"
-        audit(s, "restoration.reopen", user.id, target=ref)
+        audit(s, "restoration.reopen", user.id, target=ref, ground=ground)
         s.commit()
-    return go(f"/labor/restorations/{ref}", "Restoration reopened. The members' claims regain their standing.")
+    return go(f"/labor/restorations/{ref}", "Restoration reopened. The members' claims regain their standing; no further "
+                                            "Fund advance follows automatically.")
+
+
+@router.post("/restorations/{ref}/preopening-failure")
+def preopening_failure(request: Request, ref: str, choice: str = Form(""), reasons: str = Form(...),
+                       revised_plan: str = Form(""), new_launch_deadline: str = Form(""), user: User = Depends(labor)):
+    """s.9(a): capital was not secured before the published launch deadline."""
+    if len(reasons.strip()) < 20:
+        raise HTTPException(400, "State the findings.")
+    with SessionLocal() as s:
+        a, r, k = _restoration(s, ref)
+        if r is None or r.status != "provisional" or k is None:
+            raise HTTPException(400, "A preopening failure is recorded on a provisional restoration.")
+        require_not_recused(s, user, association_id=a.id)
+        if r.launch_deadline and date.today() <= r.launch_deadline:
+            preview_only()
+        try:
+            outcome = preopening_outcome(r.preopening_failures, choice)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        r.preopening_failures += 1
+        note = f"\n\nPreopening failure {r.preopening_failures} ({date.today():%d %B %Y}): " + clean(reasons)
+        if outcome == "revise":
+            if len(revised_plan.strip()) < 20 or not new_launch_deadline:
+                raise HTTPException(400, "Give the revised plan within the offer and its new launch deadline.")
+            new = parse_date(new_launch_deadline, "new launch deadline")
+            if new <= date.today():
+                raise HTTPException(400, "The new launch deadline must be in the future.")
+            r.revised_plan, r.launch_deadline = clean(revised_plan), new
+            msg = "First preopening failure recorded. The association continues under its revised plan within the offer."
+        else:
+            # return to the Exchange without losing claims or original priority (priority comes from the events)
+            k.status = "returned"
+            k.offer.status, k.offer.round_id = "verified", None
+            for aid in _compact_associations(s, k):
+                s.get(Association, aid).status = "roll_closed"
+            status = "returned" if outcome == "return" else "failed_preopening"
+            for other in s.scalars(select(Restoration).where(Restoration.compact_id == k.id)).all():
+                other.status = status  # every constituent of a consortium compact
+                other.preopening_failures = r.preopening_failures
+                other.no_automatic_advance = other.no_automatic_advance or outcome == "second_failure"
+            if outcome == "second_failure":
+                msg = ("Second preopening failure recorded. The members' claims stay open, but there is no automatic right "
+                       "to another Fund advance.")
+            else:
+                msg = "The association returns to the Exchange with its claims and original priority."
+        r.findings = (r.findings + note).strip()
+        audit(s, "restoration.preopening_failure", user.id, target=ref, outcome=outcome, count=r.preopening_failures)
+        s.commit()
+    return go(f"/labor/restorations/{ref}", msg)
+
+
+def _compact_associations(s, k: Compact) -> list[int]:
+    from ..models import Consortium
+
+    if k.match and k.match.consortium_id:
+        return list(s.get(Consortium, k.match.consortium_id).association_ids)
+    return [k.association_id]

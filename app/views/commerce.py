@@ -14,7 +14,7 @@ from foundation.db import SessionLocal, audit
 from foundation.models import User
 
 from ..models import FEDERAL_STATUSES, Association, Ballot, Consortium, FederalAuthorization, Match, Offer, Ranking, Round
-from ..program import is_preview, require_program_role, round_applicants, visible
+from ..program import is_preview, require_not_recused, require_program_role, round_applicants, visible
 from ..rules import (
     MAX_EXTENSION_DAYS, NEGOTIATION_DAYS, OFFER_PUBLIC_DAYS, Applicant, bundle_problems, days_from, districts_of,
     extension_problem, federal_problems, run_matching,
@@ -55,6 +55,7 @@ def verify(request: Request, ref: str, decision: str = Form(...), notes: str = F
         o = s.scalar(visible(select(Offer), Offer).where(Offer.ref == ref, Offer.status == "submitted"))
         if o is None:
             raise HTTPException(404)
+        require_not_recused(s, user, offer_id=o.id)
         if decision == "verified":
             problems = bundle_problems(o.district, o.bundle_districts, o.bundle_finding, o.bundle_finder, o.state_name)
             if problems:
@@ -94,6 +95,7 @@ def publish(request: Request, ref: str, round_id: str = Form(...), user: User = 
         r = s.get(Round, to_int(round_id))
         if o is None or r is None or r.is_demo != is_preview() or r.status != "open":
             raise HTTPException(400, "Choose a verified offer and an open round.")
+        require_not_recused(s, user, offer_id=o.id)
         if (r.rankings_close - date.today()).days < OFFER_PUBLIC_DAYS and not is_preview():
             raise HTTPException(400, f"Too late for this round: offers must be public {OFFER_PUBLIC_DAYS} days before rankings close.")
         if o.federal_prohibition:
@@ -201,6 +203,7 @@ async def federal_record(request: Request, ref: str, user: User = Depends(commer
         o = s.scalar(visible(select(Offer), Offer).where(Offer.ref == ref, Offer.status.in_(["submitted", "verified"])))
         if o is None or not o.federal_prohibition:
             raise HTTPException(404, "No offer awaiting a federal authorization.")
+        require_not_recused(s, user, offer_id=o.id)
         a = s.scalar(select(FederalAuthorization).where(FederalAuthorization.offer_id == o.id))
         if a is None:
             a = FederalAuthorization(offer_id=o.id, is_demo=o.is_demo)
@@ -236,6 +239,7 @@ def extend_match(request: Request, match_id: int, days: str = Form(...), reasons
         m = s.get(Match, match_id)
         if m is None or m.is_demo != is_preview() or m.status != "negotiating":
             raise HTTPException(404)
+        require_not_recused(s, user, association_id=m.association_id, offer_id=m.offer_id)
         r = s.get(Round, m.round_id)
         if not (r.extension_conditions or "").strip():
             raise HTTPException(400, "This round published no readiness conditions for an extension, so none is available.")
