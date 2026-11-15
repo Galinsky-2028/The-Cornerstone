@@ -13,7 +13,7 @@ from foundation.db import SessionLocal, audit
 from foundation.models import User
 
 from ..models import Ballot, Compact, FundAdvance, Match, Offer, OfferObjection
-from ..program import is_preview, next_ref, require_program_role, state_of, visible
+from ..program import is_preview, next_ref, require_not_recused, require_program_role, state_of, visible
 from ..rules import (
     DRAFT_COMPACT_PUBLIC_DAYS, NEGOTIATION_DAYS, OBJECTION_DAYS, bundle_problems, days_from, fund_terms, tiebreak_key,
 )
@@ -236,6 +236,11 @@ def _match(s, match_id: int, user: User) -> Match:
     return m
 
 
+def _deciding(s, m: Match, user: User) -> None:
+    for a in _constituents(s, m):
+        require_not_recused(s, user, association_id=a.id)
+
+
 @router.get("/state/matches/{match_id}", response_class=HTMLResponse)
 def match_page(request: Request, match_id: int, user: User = Depends(official)):
     with SessionLocal() as s:
@@ -253,6 +258,7 @@ def save_compact(request: Request, match_id: int, services: str = Form(...), lau
                  projected_annual_receipts: str = Form(...), user: User = Depends(official)):
     with SessionLocal() as s:
         m = _match(s, match_id, user)
+        _deciding(s, m, user)
         if m.status != "negotiating":
             raise HTTPException(400, "This match is no longer in negotiation.")
         if date.today() > m.negotiation_deadline:
@@ -282,6 +288,7 @@ def save_compact(request: Request, match_id: int, services: str = Form(...), lau
 def send_to_members(request: Request, match_id: int, user: User = Depends(official)):
     with SessionLocal() as s:
         m = _match(s, match_id, user)
+        _deciding(s, m, user)
         k = s.scalar(select(Compact).where(Compact.match_id == m.id))
         if k is None or k.status != "drafting" or not k.services:
             raise HTTPException(400, "Draft the compact first.")
@@ -322,6 +329,7 @@ def negotiation_failed(request: Request, match_id: int, reasons: str = Form(...)
     still-unremedied Associations without another active match."""
     with SessionLocal() as s:
         m = _match(s, match_id, user)
+        _deciding(s, m, user)
         if m.status != "negotiating":
             raise HTTPException(400)
         if date.today() <= m.negotiation_deadline and not is_preview():

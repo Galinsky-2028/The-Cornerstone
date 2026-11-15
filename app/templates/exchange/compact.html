@@ -17,6 +17,10 @@
 <section class="card"><h2>Supervision decisions</h2>
   {% for d in decisions %}<p><strong>{{ d.kind }}</strong> · <span class="status {{ d.decision }}">{{ d.decision }}</span> · {{ d.created_on.strftime('%d %b %Y') }}<br>{{ d.request }}{% if d.reasons %}<br><span class="small"><strong>Supervisor:</strong> {{ d.reasons }}</span>{% endif %}</p>{% else %}<p class="muted">None yet.</p>{% endfor %}
 </section>
+<section class="card"><h2>Officials who decided matters on this compact</h2>
+  <p class="small muted">Section 9(b): for two years after personally and substantially deciding a compact matter, an official may not accept compensated work from the association or its investors concerning that matter.</p>
+  {% for d in deciders %}<p class="small">{{ d.name }} · {{ d.what }} · {{ d.on.strftime('%d %b %Y') }} · restricted until {{ d.until.strftime('%d %b %Y') }}</p>{% else %}<p class="muted small">None recorded.</p>{% endfor %}
+</section>
 <section class="card"><h2>Quarterly reports</h2>
   <table><tr><th>Quarter</th><th class="right">Operating receipts</th><th class="right">Shareable surplus</th><th class="right">Fund repayment</th><th class="right">State land account</th></tr>
   {% for r in reports %}<tr><td>{{ r.quarter }}</td><td class="right">${{ "{:,}".format(r.operating_receipts) }}</td><td class="right">${{ "{:,}".format(r.shareable_surplus) }}</td><td class="right">${{ "{:,}".format(r.fund_remittance) }}</td><td class="right">${{ "{:,}".format(r.state_share) }}</td></tr>{% else %}<tr><td colspan="5" class="muted">No reports yet.</td></tr>{% endfor %}</table>

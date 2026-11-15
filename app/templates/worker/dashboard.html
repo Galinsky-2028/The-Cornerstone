@@ -17,6 +17,7 @@
 {% for key, url, title, what in desks %}{% if key in counts %}
   <section class="card next-step"><h3><a href="{{ url }}">{{ title }}</a></h3><p>{{ counts[key] }} {{ what }}</p><a class="btn" href="{{ url }}">Open</a></section>
 {% endif %}{% endfor %}
+<section class="card"><h3><a href="/app/conflicts">Conflicts and recusal</a></h3><p>Disclose a conflict and recuse from a matter (section 9(b)).</p><a class="btn" href="/app/conflicts">Open</a></section>
 {% if current_user(request).role == 'admin' %}<section class="card next-step"><h3><a href="/site">Site and the legal-mode switch</a></h3><p>Currently in <strong>{{ legal_mode() }}</strong> mode.</p><a class="btn" href="/site">Open</a></section>{% endif %}
 </div>
 {% endif %}

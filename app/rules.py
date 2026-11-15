@@ -322,3 +322,45 @@ def federal_problems(auth, on: date) -> list[str]:
     elif len((auth.findings or "").strip()) < FINDING_MIN_CHARS:
         problems.append("The regulator's public findings are missing.")
     return problems
+
+
+# --------------------------------------------------------------------------
+# Section 9: delivery and accountability
+# --------------------------------------------------------------------------
+REOPEN_GROUNDS = {
+    "governmental_withdrawal": "Governmental withdrawal of the compact right",
+    "judicial_invalidation": "Judicial invalidation of the compact right",
+    "governmental_defeat": "Other governmental defeat of the compact right",
+}
+NOT_REOPEN_GROUNDS = {
+    "commercial_failure": "Ordinary commercial failure after a properly authorized and financed launch",
+    "costs_or_demand": "Ordinary changes in costs or demand",
+    "material_violation": "Lawful enforcement for the Association's material violation",
+}
+COOLING_OFF_YEARS = 2
+
+
+def reopen_problem(ground: str) -> str | None:
+    if ground in NOT_REOPEN_GROUNDS:
+        return f"Section 9(a): {NOT_REOPEN_GROUNDS[ground].lower()} does not reopen claims."
+    if ground not in REOPEN_GROUNDS:
+        return "Choose the governmental action or judgment that defeated the compact right."
+    return None
+
+
+def preopening_outcome(failures_so_far: int, choice: str) -> str:
+    """s.9(a): after a first failure to secure capital before the launch deadline, the Association has one
+    opportunity to revise its plan within the offer or return to the Exchange; a second leaves the claims open
+    with no automatic right to another advance. Returns revise | return | second_failure, or raises ValueError."""
+    if failures_so_far >= 2:
+        raise ValueError("Both preopening opportunities have been used.")
+    if failures_so_far == 1:
+        return "second_failure"
+    if choice not in ("revise", "return"):
+        raise ValueError("Choose to revise the plan within the offer or to return to the Exchange.")
+    return choice
+
+
+def cooling_off_ends(decided_on: date) -> date:
+    """s.9(b): two years after personally and substantially deciding a compact matter."""
+    return _add_years(decided_on, COOLING_OFF_YEARS)

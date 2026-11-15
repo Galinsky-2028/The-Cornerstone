@@ -124,6 +124,22 @@
   <p class="small">Members' choices: {% for k, v in opportunities.items() %}{{ v }}: {{ opp_counts.get(k, 0) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
 </section>
 
+<section class="card" id="audits"><h2>Annual audits and disclosures</h2>
+  <p class="small muted">Section 9(b): every year an independent financial and beneficiary-control audit, with the compact, material investor rights, beneficial ownership and the audit summary disclosed on the Exchange. The association and its controlled entities make no political contribution to an official or candidate for an office supervising their compact.</p>
+  {% for au in audits %}<p><strong>{{ au.year }}</strong> · {{ au.auditor }} · {{ audit_opinions.get(au.financial_opinion) }} · beneficiary control {{ 'confirmed' if au.beneficiary_control else 'NOT confirmed' }}<br><span class="small">{{ au.summary }}</span></p>{% else %}<p class="muted">None published.</p>{% endfor %}
+  {% if board and a.status not in ['chartering', 'charter_refused'] %}
+  <form method="post" action="/app/associations/{{ a.ref }}/audits" class="ballot">{{ csrf_field(request) }}
+    <div class="row"><label>Year audited<input name="year" inputmode="numeric" required></label><label>Independent auditor<input name="auditor" required></label>
+      <label>Financial opinion<select name="financial_opinion">{% for k, v in audit_opinions.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label></div>
+    <label><input type="checkbox" name="beneficiary_control" value="1"> The audit confirms the members keep all voting control over the compact and operating companies</label>
+    <label><input type="checkbox" name="no_political_contributions" value="1"> No political contribution was made to an official or candidate for an office supervising the compact</label>
+    <label>Material investor rights<textarea name="investor_rights" rows="2"></textarea></label>
+    <label>Beneficial ownership<textarea name="beneficial_ownership" rows="2" required></textarea></label>
+    <label>Audit summary<textarea name="summary" rows="3" required></textarea></label>
+    <button class="btn" type="submit">Publish the audit</button></form>
+  {% endif %}
+</section>
+
 <section class="card" id="fund"><h2>Founding Fund advances</h2>
   <p class="small muted">The Fund pays providers directly for petitions, enrollment, formation, feasibility, legal and accounting work, licensing and training. It is repaid only from the enterprise's receipts at a fixed rate; members owe nothing personally.</p>
   <table><tr><th>Purpose</th><th>Provider</th><th class="right">Amount</th><th>Status</th></tr>

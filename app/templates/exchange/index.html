@@ -61,6 +61,17 @@
   {% for d in decisions %}<p class="small"><strong>{{ compact_refs.get(d.compact_id) }}</strong> · {{ d.kind }} · <span class="status {{ d.decision }}">{{ d.decision }}</span><br>{{ d.reasons }}</p>
   {% else %}<p class="muted">None yet.</p>{% endfor %}
 </section>
+<section class="card" id="annual-audits">
+  <h2>Annual audits and disclosures</h2>
+  {% for au in audits %}<p class="small"><strong>{{ au.association.ref }}</strong> {{ au.year }} · {{ au.auditor }} · {{ au.financial_opinion }} · beneficiary control {{ 'confirmed' if au.beneficiary_control else 'NOT confirmed' }}{% if not au.no_political_contributions %} · no attestation on political contributions{% endif %}<br>{{ au.summary }}<br>Beneficial ownership: {{ au.beneficial_ownership }}{% if au.investor_rights %}<br>Material investor rights: {{ au.investor_rights }}{% endif %}</p>
+  {% else %}<p class="muted">None yet.</p>{% endfor %}
+  {% if audits_overdue %}<p class="small"><strong>Audit overdue:</strong> {{ audits_overdue|join(', ') }}</p>{% endif %}
+</section>
+<section class="card" id="conflicts">
+  <h2>Disclosed conflicts and recusals</h2>
+  {% for d in conflicts %}<p class="small"><strong>{{ d.official_name }}</strong> ({{ d.role }}) · {{ conflict_refs.get(d.id, '') }} · {{ d.created_on.strftime('%d %b %Y') }}<br>{{ d.nature }}</p>
+  {% else %}<p class="muted">None disclosed.</p>{% endfor %}
+</section>
 <section class="card" id="audits">
   <h2>Quarterly reports</h2>
   {% for r in reports %}<p class="small"><strong>{{ compact_refs.get(r.compact_id) }}</strong> {{ r.quarter }}: receipts ${{ "{:,}".format(r.operating_receipts) }}; Fund repayment ${{ "{:,}".format(r.fund_remittance) }}; State land account ${{ "{:,}".format(r.state_share) }}</p>
