@@ -411,49 +411,86 @@ def create_persona(persona: str) -> tuple[User, str]:
 
 
 # --------------------------------------------------------------------------
-# Nightly rebuild
+# Daily rebuild
 # --------------------------------------------------------------------------
+# Render's free plan stops the process after 15 minutes without visitors, and Foundation's repeating tasks first
+# run one interval after the process starts, so an hourly task alone almost never runs on a sleeping service.
+# The rebuild is therefore also checked on page views: the first visit of each UTC day rebuilds the example world,
+# whether or not the hourly task got there first. Nothing here is reachable by a request parameter; it only ever
+# rebuilds preview records, and only while the site is in preview mode.
+import threading  # noqa: E402
+import time  # noqa: E402
+
 from foundation.jobs import every  # noqa: E402
 
 RESET_KEY = "preview_reset_on"
+CHECK_SECONDS = 60
+_lock = threading.Lock()
+_last_check = 0.0
+
+
+def _today() -> str:
+    from .program import today
+
+    return today().isoformat()
+
+
+def preview_is_stale() -> bool:
+    from .models import SiteSetting
+    from .program import is_preview
+
+    if not is_preview():
+        return False
+    with SessionLocal() as s:
+        row = s.get(SiteSetting, RESET_KEY)
+        return (row.value if row else "") != _today()
+
+
+def rebuild_if_stale(log=None) -> bool:
+    """Rebuild the preview once per UTC day. Returns True when this call rebuilt it. Concurrent callers in this
+    process do not wait: one rebuilds, the others carry on with the current world."""
+    from .models import SiteSetting
+
+    if not preview_is_stale():
+        ensure_demo_world()
+        return False
+    if not _lock.acquire(blocking=False):
+        return False
+    try:
+        if not preview_is_stale():  # another process may have just done it
+            return False
+        reset_demo_world()
+        with SessionLocal() as s:
+            row = s.get(SiteSetting, RESET_KEY)
+            if row is None:
+                s.add(SiteSetting(key=RESET_KEY, value=_today()))
+            else:
+                row.value = _today()
+            s.commit()
+        if log:
+            log("preview world rebuilt")
+        return True
+    finally:
+        _lock.release()
 
 
 @every(hours=1)
 def nightly_preview_reset(log) -> None:
     """Build the preview on first start, then rebuild it once a day so it always starts from the same story."""
-    from .models import SiteSetting
-    from .program import is_preview
-
-    if not is_preview():
-        return
-    with SessionLocal() as s:
-        row = s.get(SiteSetting, RESET_KEY)
-        last = row.value if row else ""
-    if last == date.today().isoformat():
-        ensure_demo_world()
-        return
-    reset_demo_world()
-    with SessionLocal() as s:
-        row = s.get(SiteSetting, RESET_KEY)
-        if row is None:
-            s.add(SiteSetting(key=RESET_KEY, value=date.today().isoformat()))
-        else:
-            row.value = date.today().isoformat()
-        s.commit()
-    log("preview world rebuilt")
+    rebuild_if_stale(log)
 
 
 _warm = False
 
 
 def warm() -> None:
-    """Called by the first public page view in each process, so a new deployment shows the example world
-    without waiting for the hourly task."""
-    global _warm
-    if _warm:
+    """Called by the public pages. Checks at most once a minute per process whether today's rebuild is due."""
+    global _warm, _last_check
+    now = time.monotonic()
+    if _warm and now - _last_check < CHECK_SECONDS:
         return
-    _warm = True
+    _warm, _last_check = True, now
     try:
-        ensure_demo_world()
+        rebuild_if_stale()
     except Exception:  # never let the preview break a public page
         _warm = False

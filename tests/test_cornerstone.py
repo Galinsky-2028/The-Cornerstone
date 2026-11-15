@@ -363,3 +363,51 @@ def test_interest_csv_is_admin_only_and_safe(client):
     body = a.get("/site/interest.csv").text
     assert "Example legislative staffer" not in body  # preview examples are not exported
     assert "'=HYPERLINK(1)" in body  # real sign-ups are, with formulas neutralised
+
+
+# --------------------------------------------------------------------------
+# /act and the daily preview rebuild
+# --------------------------------------------------------------------------
+def test_act_address_leads_to_the_bill(client):
+    r = client.get("/act", follow_redirects=False)
+    assert r.status_code == 308 and r.headers["location"] == "/documents/federal-bill"
+    assert "Section 2 Event certification" in client.get("/act").text
+
+
+def test_first_visit_of_the_day_rebuilds_a_stale_preview(client):
+    import app.seed as seed
+    from app.models import SiteSetting
+    from app.program import today
+
+    client.get("/")
+    with SessionLocal() as s:
+        assert s.get(SiteSetting, seed.RESET_KEY).value == today().isoformat()
+        first = s.scalars(select(Event.id).where(Event.is_demo.is_(True))).all()
+        # a visitor's change during the day, and a day that has passed
+        s.add(Event(ref="E-9999", title="Visitor's petition", comment_ends=today(), decision_due=today(), is_demo=True))
+        s.get(SiteSetting, seed.RESET_KEY).value = (today() - timedelta(days=1)).isoformat()
+        s.commit()
+    seed._warm = False
+    client.get("/")
+    with SessionLocal() as s:
+        assert s.get(SiteSetting, seed.RESET_KEY).value == today().isoformat()
+        assert s.scalar(select(Event.id).where(Event.ref == "E-9999")) is None
+        assert len(s.scalars(select(Event.id).where(Event.is_demo.is_(True))).all()) == len(first)
+    # the same day, nothing is rebuilt again
+    assert seed.rebuild_if_stale() is False
+
+
+def test_no_rebuild_once_enacted(client):
+    import app.seed as seed
+    from app.models import SiteSetting
+    from app.program import set_legal_mode
+
+    client.get("/")
+    set_legal_mode("enacted", 1)
+    with SessionLocal() as s:
+        s.get(SiteSetting, seed.RESET_KEY).value = "2000-01-01"
+        s.commit()
+    assert seed.preview_is_stale() is False
+    assert seed.rebuild_if_stale() is False
+    with SessionLocal() as s:
+        assert s.get(SiteSetting, seed.RESET_KEY).value == "2000-01-01"

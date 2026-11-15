@@ -67,6 +67,12 @@ def document_download(slug: str):
     return FileResponse(DOCS / doc["file"], filename=doc["file"])
 
 
+@router.get("/act")
+def act():
+    """A short, stable address for the Act itself."""
+    return RedirectResponse("/documents/federal-bill", status_code=308)
+
+
 @router.get("/speech", response_class=HTMLResponse)
 def speech(request: Request):
     return page(request, "public/speech.html", {"text": (CONTENT / "speech.md").read_text()})
