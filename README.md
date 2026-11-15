@@ -2,7 +2,7 @@
 
 The working website for the Cornerstone Livelihood Restoration Act, a Galinsky 2028 policy. It runs the whole program the Act describes, and until the Act is law it runs as a public preview anyone can try.
 
-**Public pages:** the Act and its documents, the policy speech, the Displacement Event Census (231 entries), and the public Exchange (event register, associations, offers, matching rounds with their published logs, compacts, supervision decisions and quarterly reports).
+**Public pages:** the Act and its documents (`/act` leads to the bill), the policy speech, the Displacement Event Census (231 entries), and the public Exchange (event register, associations, offers, matching rounds with their published logs, compacts, supervision decisions and quarterly reports).
 
 **The program, by section of the Act**
 
@@ -16,7 +16,7 @@ The working website for the Cornerstone Livelihood Restoration Act, a Galinsky 2
 | 8 Founding Fund | Associations; Labor | Advances paid to providers, fixed repayment percentage by formula, quarterly remittances |
 | 9 Restoration | Labor | Five-condition findings, provisional then remedied, reopening |
 
-**Preview and the switch.** In preview mode every page says the Act is not law, `/preview` gives anyone a signed-in account in any of six roles inside an example world (rebuilt nightly), and waiting periods can be skipped. An administrator turns the site to enacted mode at `/site`: preview accounts are switched off and signed out, example records are hidden, and the warnings disappear. The switch needs an administrator account, a separate switch password (stored as a hash; changeable only with the current one), and a typed confirmation phrase, in both directions. Attempts are rate-limited and audited, and every administrator is emailed when the mode changes.
+**Preview and the switch.** In preview mode every page says the Act is not law, `/preview` gives anyone a signed-in account in any of six roles inside an example world (rebuilt once a day: by the first visit of each UTC day, so it also works on a sleeping free service), and waiting periods can be skipped. An administrator turns the site to enacted mode at `/site`: preview accounts are switched off and signed out, example records are hidden, and the warnings disappear. The switch needs an administrator account, a separate switch password (stored as a hash; changeable only with the current one), and a typed confirmation phrase, in both directions. Attempts are rate-limited and audited, and every administrator is emailed when the mode changes.
 
 Code: `app/rules.py` (the Act's tests and formulas), `app/models.py`, `app/views/` (one module per role), `app/seed.py` (the example world), `tests/test_cornerstone.py`.
 
@@ -110,7 +110,7 @@ The engine's administrator creates one API key per calling app on the engine's A
 Projects never edit `foundation/`, so merging Foundation's newer commits into a project does not conflict with the project's own code:
 
 ```bash
-git remote add foundation https://github.com/galinskylaboratories/Foundation
+git remote add foundation https://github.com/Galinsky-2028/Foundation
 git fetch foundation && git merge foundation/main
 ```
 
