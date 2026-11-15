@@ -3,7 +3,7 @@
 {% block page %}
 <p class="small"><a href="/state#matches">← State desk</a></p>
 <h1>{{ m.offer.ref }} {{ m.offer.trade }} ↔ {{ m.association.name }}</h1>
-<p class="muted">Matched in round {{ m.round_id }} · priority date {{ m.priority_date.strftime('%d %b %Y') }} · <span class="status {{ m.status }}">{{ m.status }}</span>{% if m.status == 'negotiating' %} · negotiate by {{ m.negotiation_deadline.strftime('%d %B %Y') }}{% endif %}</p>
+<p class="muted">Matched in round {{ m.round_id }} · priority date {{ m.priority_date.strftime('%d %b %Y') }} · <span class="status {{ m.status }}">{{ m.status }}</span>{% if m.status == 'negotiating' %} · negotiate by {{ m.negotiation_deadline.strftime('%d %B %Y') }}{% if m.extension_days %} (extended once by {{ m.extension_days }} days){% endif %}{% endif %}</p>
 <p class="prose small">The State negotiates only with the matched association and only within the published menu: {{ m.offer.negotiable_terms }}</p>
 
 {% if m.status == 'negotiating' and (not k or k.status == 'drafting') %}
@@ -38,11 +38,12 @@
 {% endif %}
 
 {% if m.status == 'negotiating' %}
-<form method="post" action="/state/matches/{{ m.id }}/fail" class="card danger-zone" data-confirm="End negotiation? The offer returns to the Exchange.">{{ csrf_field(request) }}
+<form method="post" action="/state/matches/{{ m.id }}/fail" class="card danger-zone" data-confirm="End negotiation? The offer passes to the next willing association.">{{ csrf_field(request) }}
   <h2>Negotiation failed</h2>
+  <p class="small">Section 5(c): the offer passes to the next willing association under the round's original rankings and priorities, and this association proceeds to its next available choice.</p>
   <p class="small">{% if today <= m.negotiation_deadline %}{% if is_preview() %}Preview: you may end it now. Under the Act, negotiation lasts {{ 180 }} days.{% else %}Available after {{ m.negotiation_deadline.strftime('%d %B %Y') }}.{% endif %}{% endif %}</p>
   <label>Reasons<textarea name="reasons" rows="2" required></textarea></label>
-  <button class="btn danger" type="submit">Return the offer to the Exchange</button>
+  <button class="btn danger" type="submit">Record the failure</button>
 </form>
 {% endif %}
 {% endblock %}

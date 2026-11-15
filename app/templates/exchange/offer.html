@@ -13,7 +13,15 @@
   <dt>Independent supervisor</dt><dd>{{ o.supervisor }}</dd>
   <dt>State surplus share</dt><dd>{{ o.surplus_rate_pct }}% of positive shareable surplus, paid only into the State land-acquisition account</dd>
   <dt>Negotiable commercial terms</dt><dd>{{ o.negotiable_terms }}</dd>
-  <dt>Federal authorization</dt><dd>{{ o.federal_authorization or 'No federal prohibition applies.' }}</dd>
+  {% if bundle %}<dt>Bundle of districts</dt><dd>{{ o.district }} and: {% for name, why in bundle %}<br>{{ name }}: {{ why }}{% endfor %}</dd>
+  <dt>Independent feasibility finding</dt><dd>{{ o.bundle_finding }} <span class="small">({{ o.bundle_finder }})</span></dd>{% endif %}
+  <dt>Federal law</dt><dd>{% if not o.federal_prohibition %}No federal prohibition applies.{% elif not fed %}A federal prohibition applies. No authorization is recorded, so this offer cannot be ranked.{% else %}
+    <span class="status {{ fed.status }}">authorization {{ fed.status }}</span>{% if fed.decided_on %} · {{ fed.decided_on.strftime('%d %b %Y') }}{% endif %}
+    <br>Act of Congress: {{ fed.act_citation }}<br>Displaced prohibitions: {{ fed.displaced_prohibitions }}<br>Regulator: {{ fed.regulator }}
+    <br>Activity: {{ fed.activity }}<br>Persons: {{ fed.persons }}<br>Territory: {{ fed.territory }}
+    <br>In effect: {{ fed.starts_on.strftime('%d %b %Y') if fed.starts_on }} to {{ fed.ends_on.strftime('%d %b %Y') if fed.ends_on }}<br>Safeguards: {{ fed.safeguards }}
+    {% if fed.findings %}<br>Regulator's findings: {{ fed.findings }}{% endif %}{% endif %}
+    {% if o.federal_authorization %}<br><span class="small">State's notes: {{ o.federal_authorization }}</span>{% endif %}</dd>
   <dt>Proof of no new harm</dt><dd>{{ o.no_new_harm }}</dd>
   <dt>Exclusive term</dt><dd>30 years from the operative date, with one automatic 10-year renewal while the workers keep voting control</dd>
 </dl></section>

@@ -13,9 +13,12 @@ from sqlalchemy import select
 from foundation.db import SessionLocal, audit
 from foundation.models import User
 
-from ..models import Association, Ballot, Match, Offer, Ranking, Round
+from ..models import FEDERAL_STATUSES, Association, Ballot, FederalAuthorization, Match, Offer, Ranking, Round
 from ..program import association_priority, is_preview, require_program_role, visible
-from ..rules import NEGOTIATION_DAYS, OFFER_PUBLIC_DAYS, Applicant, days_from, run_matching
+from ..rules import (
+    MAX_EXTENSION_DAYS, NEGOTIATION_DAYS, OFFER_PUBLIC_DAYS, Applicant, bundle_problems, days_from, districts_of,
+    extension_problem, federal_problems, run_matching,
+)
 from .association import settle_ballot
 from .common import clean, go, page, parse_date, preview_only, to_int
 
@@ -35,8 +38,14 @@ def desk(request: Request, user: User = Depends(commerce)):
                          "pending": len(s.scalars(select(Ranking.id).where(Ranking.round_id == r.id,
                                                                             Ranking.status == "pending_vote")).all())}
                   for r in rounds}
+        federal = {o.id: s.scalar(select(FederalAuthorization).where(FederalAuthorization.offer_id == o.id))
+                   for o in list(submitted) + list(verified) if o.federal_prohibition}
+        matches = s.scalars(visible(select(Match), Match).where(Match.status == "negotiating").order_by(Match.id)).all()
         return page(request, "commerce/desk.html", {"submitted": submitted, "verified": verified, "rounds": rounds,
-                                                     "counts": counts, "today": date.today(),
+                                                     "counts": counts, "today": date.today(), "federal": federal,
+                                                     "federal_problems": {i: federal_problems(a, date.today()) for i, a in federal.items()},
+                                                     "matches": matches, "max_extension": MAX_EXTENSION_DAYS,
+                                                     "federal_statuses": FEDERAL_STATUSES,
                                                      "min_close": days_from(date.today(), OFFER_PUBLIC_DAYS)})
 
 
@@ -47,6 +56,9 @@ def verify(request: Request, ref: str, decision: str = Form(...), notes: str = F
         if o is None:
             raise HTTPException(404)
         if decision == "verified":
+            problems = bundle_problems(o.district, o.bundle_districts, o.bundle_finding, o.bundle_finder, o.state_name)
+            if problems:
+                raise HTTPException(400, " ".join(problems))
             o.status = "verified"
         elif decision == "returned":
             if not notes.strip():
@@ -61,13 +73,14 @@ def verify(request: Request, ref: str, decision: str = Form(...), notes: str = F
 
 
 @router.post("/rounds/new")
-def new_round(request: Request, name: str = Form(...), rankings_close: str = Form(...), user: User = Depends(commerce)):
+def new_round(request: Request, name: str = Form(...), rankings_close: str = Form(...), extension_conditions: str = Form(""),
+              user: User = Depends(commerce)):
     close = parse_date(rankings_close, "date rankings close")
     if close < days_from(date.today(), OFFER_PUBLIC_DAYS) and not is_preview():
         raise HTTPException(400, f"Offers must be public at least {OFFER_PUBLIC_DAYS} days before rankings close.")
     with SessionLocal() as s:
         r = Round(name=clean(name, 200), rankings_close=close, random_seed=secrets.token_hex(16), created_by=user.id,
-                  is_demo=is_preview())
+                  extension_conditions=clean(extension_conditions), is_demo=is_preview())
         s.add(r)
         audit(s, "round.open", user.id, target=r.name, seed=r.random_seed)
         s.commit()
@@ -83,6 +96,18 @@ def publish(request: Request, ref: str, round_id: str = Form(...), user: User = 
             raise HTTPException(400, "Choose a verified offer and an open round.")
         if (r.rankings_close - date.today()).days < OFFER_PUBLIC_DAYS and not is_preview():
             raise HTTPException(400, f"Too late for this round: offers must be public {OFFER_PUBLIC_DAYS} days before rankings close.")
+        if o.federal_prohibition:
+            problems = federal_problems(s.scalar(select(FederalAuthorization).where(FederalAuthorization.offer_id == o.id)),
+                                        date.today())
+            if problems:
+                raise HTTPException(400, "Section 7(a): " + " ".join(problems))
+        # s.5(c): offers in the same round may not promise overlapping exclusive rights
+        mine = districts_of(o.district, o.bundle_districts)
+        for other in s.scalars(select(Offer).where(Offer.round_id == r.id, Offer.status == "published", Offer.id != o.id)).all():
+            if other.state_name == o.state_name and other.trade.strip().lower() == o.trade.strip().lower() \
+                    and mine & districts_of(other.district, other.bundle_districts):
+                raise HTTPException(400, f"{other.ref} in this round already offers exclusive rights to {o.trade} in an "
+                                         "overlapping district.")
         o.status, o.round_id, o.published_on = "published", r.id, date.today()
         audit(s, "offer.publish", user.id, target=ref, round=r.id)
         s.commit()
@@ -113,6 +138,11 @@ def run_round(request: Request, round_id: int, user: User = Depends(commerce)):
                 rk.status = "rejected"
         s.flush()
         offers = s.scalars(select(Offer).where(Offer.round_id == r.id, Offer.status == "published")).all()
+        unauthorized = [o for o in offers if o.federal_prohibition and federal_problems(
+            s.scalar(select(FederalAuthorization).where(FederalAuthorization.offer_id == o.id)), date.today())]
+        for o in unauthorized:  # s.7(a): an authorization that lapsed or was withdrawn takes the offer out of the round
+            o.status = "verified"
+        offers = [o for o in offers if o not in unauthorized]
         applicants, assoc_refs = [], {}
         for rk in s.scalars(select(Ranking).where(Ranking.round_id == r.id, Ranking.status == "submitted")).all():
             a = rk.association
@@ -138,3 +168,64 @@ def run_round(request: Request, round_id: int, user: User = Depends(commerce)):
         s.commit()
     return go(f"/exchange/rounds/{round_id}", f"Matching is complete: {len(held)} match(es). Every ranking, priority date, "
                                               "draw number and step is now public.")
+
+
+# --------------------------------------------------------------------------
+# Section 7(a): federal authorization of a federally prohibited activity
+# --------------------------------------------------------------------------
+@router.post("/offers/{ref}/federal")
+async def federal_record(request: Request, ref: str, user: User = Depends(commerce)):
+    """Commerce records and publishes the Act of Congress and the designated regulator's decision on it."""
+    form = await request.form()
+    with SessionLocal() as s:
+        o = s.scalar(visible(select(Offer), Offer).where(Offer.ref == ref, Offer.status.in_(["submitted", "verified"])))
+        if o is None or not o.federal_prohibition:
+            raise HTTPException(404, "No offer awaiting a federal authorization.")
+        a = s.scalar(select(FederalAuthorization).where(FederalAuthorization.offer_id == o.id))
+        if a is None:
+            a = FederalAuthorization(offer_id=o.id, is_demo=o.is_demo)
+            s.add(a)
+        for f in ("act_citation", "regulator"):
+            setattr(a, f, clean(str(form.get(f, "")), 300))
+        for f in ("displaced_prohibitions", "activity", "persons", "territory", "safeguards", "findings"):
+            setattr(a, f, clean(str(form.get(f, ""))))
+        a.starts_on = parse_date(str(form.get("starts_on")), "start of the authorization") if form.get("starts_on") else None
+        a.ends_on = parse_date(str(form.get("ends_on")), "end of the authorization") if form.get("ends_on") else None
+        status = str(form.get("status", "pending"))
+        if status not in FEDERAL_STATUSES:
+            raise HTTPException(400)
+        if status != "pending" and len(a.findings) < 40:
+            raise HTTPException(400, "Record the regulator's public findings with its decision.")
+        a.status, a.recorded_by = status, user.id
+        a.decided_on = date.today() if status != "pending" else None
+        audit(s, "offer.federal_authorization", user.id, target=ref, status=status)
+        s.commit()
+        problems = federal_problems(a, date.today())
+    return go("/commerce#federal", "Recorded and published." + (" It cannot be ranked yet: " + " ".join(problems) if problems else
+                                                                 " The offer may be ranked within the authorization's limits."))
+
+
+# --------------------------------------------------------------------------
+# Section 5(c): one negotiation extension of up to 90 days, on the round's published readiness conditions
+# --------------------------------------------------------------------------
+@router.post("/matches/{match_id}/extend")
+def extend_match(request: Request, match_id: int, days: str = Form(...), reasons: str = Form(...),
+                 user: User = Depends(commerce)):
+    n = to_int(days)
+    with SessionLocal() as s:
+        m = s.get(Match, match_id)
+        if m is None or m.is_demo != is_preview() or m.status != "negotiating":
+            raise HTTPException(404)
+        r = s.get(Round, m.round_id)
+        if not (r.extension_conditions or "").strip():
+            raise HTTPException(400, "This round published no readiness conditions for an extension, so none is available.")
+        if date.today() > m.negotiation_deadline:
+            raise HTTPException(400, "The negotiation period has already ended.")
+        problem = extension_problem(m.extension_days, n, reasons)
+        if problem:
+            raise HTTPException(400, problem)
+        m.extension_days, m.extension_reasons = n, clean(reasons)
+        m.negotiation_deadline = days_from(m.negotiation_deadline, n)
+        audit(s, "match.extend", user.id, target=str(m.id), days=n)
+        s.commit()
+    return go("/commerce#matches", f"Extended once, to {m.negotiation_deadline:%d %B %Y}, on the round's published conditions.")

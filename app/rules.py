@@ -240,3 +240,85 @@ def days_from(d: date, n: int) -> date:
 
 OBJECTION_DAYS = 60               # Model State Act s.4(a): at least 60 days for objections and contrary evidence
 DRAFT_COMPACT_PUBLIC_DAYS = 30    # Model State Act s.4(d): draft compact public 30 days before execution
+
+MAX_EXTENSION_DAYS = 90           # s.2(c) event decisions; s.5(c) negotiations
+FINDING_MIN_CHARS = 40
+
+
+# --------------------------------------------------------------------------
+# Sections 2(c) and 5(c): one extension of not more than 90 days
+# --------------------------------------------------------------------------
+def extension_problem(already_extended_days: int, days: int, reasons: str) -> str | None:
+    """Returns why an extension may not be granted, or None. Only one extension, of 1 to 90 days, with reasons."""
+    if already_extended_days:
+        return "The Act allows only one extension."
+    if not 1 <= days <= MAX_EXTENSION_DAYS:
+        return f"An extension is between 1 and {MAX_EXTENSION_DAYS} days."
+    if len((reasons or "").strip()) < 20:
+        return "State the public reasons for the extension."
+    return None
+
+
+# --------------------------------------------------------------------------
+# Section 5(c): bundles of districts
+# --------------------------------------------------------------------------
+def parse_bundle(text: str) -> list[tuple[str, str]]:
+    """Additional districts, one per line as "District: why it independently qualifies"."""
+    out = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        name, _, why = line.partition(":")
+        out.append((name.strip(), why.strip()))
+    return out
+
+
+def bundle_problems(main_district: str, bundle_text: str, finding: str, finder: str, state_name: str) -> list[str]:
+    """A ranking may cover a bundle only if an independent feasibility finding shows that a single district cannot
+    support a usable opportunity for the full membership, and every district independently qualifies."""
+    extra = parse_bundle(bundle_text)
+    if not extra:
+        return []
+    problems = []
+    names = [main_district.strip().lower()] + [n.lower() for n, _ in extra]
+    if any(not n for n in names) or len(set(names)) != len(names):
+        problems.append("Name every district in the bundle once.")
+    if any(not why for _, why in extra):
+        problems.append("Show for every district in the bundle why it independently qualifies.")
+    if len((finding or "").strip()) < FINDING_MIN_CHARS:
+        problems.append("A bundle needs an independent feasibility finding that a single district cannot support a "
+                        "usable opportunity for the full membership.")
+    f = (finder or "").strip().lower()
+    if not f or (state_name and f == state_name.strip().lower()):
+        problems.append("Name the independent reviewer who made the feasibility finding (not the offering State).")
+    return problems
+
+
+def districts_of(main_district: str, bundle_text: str) -> set[str]:
+    return {main_district.strip().lower()} | {n.lower() for n, _ in parse_bundle(bundle_text) if n}
+
+
+# --------------------------------------------------------------------------
+# Section 7(a): federal authorization
+# --------------------------------------------------------------------------
+FEDERAL_FIELDS = {"act_citation": "the Act of Congress", "displaced_prohibitions": "each displaced federal prohibition",
+                  "regulator": "the administering regulator", "activity": "the activity", "persons": "the persons covered",
+                  "territory": "the territory", "safeguards": "the safeguards"}
+
+
+def federal_problems(auth, on: date) -> list[str]:
+    """Why a federally prohibited activity may not be ranked on `on`, or [] if it may."""
+    if auth is None:
+        return ["No federal authorization is recorded. A federally prohibited activity cannot be ranked without one."]
+    problems = [f"The authorization does not state {label}." for f, label in FEDERAL_FIELDS.items()
+                if not (getattr(auth, f) or "").strip()]
+    if auth.starts_on is None or auth.ends_on is None:
+        problems.append("The authorization does not prescribe its duration.")
+    elif not auth.starts_on <= on <= auth.ends_on:
+        problems.append("The authorization is not in effect.")
+    if auth.status != "issued":
+        problems.append("The designated regulator has not issued the implementing authorization.")
+    elif len((auth.findings or "").strip()) < FINDING_MIN_CHARS:
+        problems.append("The regulator's public findings are missing.")
+    return problems

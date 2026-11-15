@@ -12,11 +12,12 @@ from foundation.db import SessionLocal, audit
 from foundation.models import User
 
 from ..models import (
-    FUND_CATEGORIES, RESTORATION_CHECKS, Association, Claim, Compact, Event, FundAdvance, Membership, Restoration,
+    FUND_CATEGORIES, RESTORATION_CHECKS, SUBPOENA_STATUSES, Association, Claim, Compact, Event, FundAdvance, Membership,
+    Restoration, Subpoena,
 )
 from ..program import founding_units, is_preview, require_program_role, visible
-from ..rules import ENROLLMENT_DAYS, days_from
-from .common import clean, go, page, parse_date, preview_only
+from ..rules import ENROLLMENT_DAYS, MAX_EXTENSION_DAYS, days_from, extension_problem
+from .common import clean, go, page, parse_date, preview_only, to_int
 from .worker import DOC_KINDS, SEPARATIONS, WORK_TYPES, _assess
 
 router = APIRouter(prefix="/labor")
@@ -57,7 +58,70 @@ def event_review(request: Request, ref: str, user: User = Depends(labor)):
     with SessionLocal() as s:
         e = _event(s, ref)
         s.commit()
-        return page(request, "labor/event.html", {"e": e, "comments": list(e.comments), "today": date.today()})
+        subpoenas = s.scalars(select(Subpoena).where(Subpoena.event_id == e.id).order_by(Subpoena.id)).all()
+        return page(request, "labor/event.html", {"e": e, "comments": list(e.comments), "today": date.today(),
+                                                   "subpoenas": subpoenas, "max_extension": MAX_EXTENSION_DAYS,
+                                                   "subpoena_statuses": SUBPOENA_STATUSES})
+
+
+@router.post("/events/{ref}/extend")
+def event_extend(request: Request, ref: str, days: str = Form(...), reasons: str = Form(...), user: User = Depends(labor)):
+    """s.2(c): one extension of not more than 90 days requires public reasons."""
+    n = to_int(days)
+    with SessionLocal() as s:
+        e = _event(s, ref)
+        if e.status not in ("comment_period", "under_review"):
+            raise HTTPException(400, "Only an undecided petition can be extended.")
+        problem = extension_problem(e.extension_days, n, reasons)
+        if problem:
+            raise HTTPException(400, problem)
+        e.extension_days, e.extension_reasons = n, clean(reasons)
+        e.decision_due = days_from(e.decision_due, n)
+        audit(s, "event.extend", user.id, target=ref, days=n)
+        s.commit()
+    return go(f"/labor/events/{ref}", f"The decision is now due {e.decision_due:%d %B %Y}. The reasons are published.")
+
+
+@router.post("/events/{ref}/subpoenas")
+def subpoena_issue(request: Request, ref: str, recipient: str = Form(...), records: str = Form(...),
+                   relevance: str = Form(...), return_by: str = Form(...), user: User = Depends(labor)):
+    """s.2(c): Labor may require relevant records by subpoena while it investigates a petition."""
+    due = parse_date(return_by, "return date")
+    with SessionLocal() as s:
+        e = _event(s, ref)
+        if e.status not in ("comment_period", "under_review"):
+            raise HTTPException(400, "Subpoenas issue only while a petition is being investigated.")
+        if not recipient.strip() or not records.strip() or len(relevance.strip()) < 20:
+            raise HTTPException(400, "Name the recipient and the records, and state why they are relevant to a material dispute.")
+        if due <= date.today():
+            raise HTTPException(400, "Give the recipient a return date in the future.")
+        s.add(Subpoena(event_id=e.id, recipient=clean(recipient, 300), records=clean(records), relevance=clean(relevance),
+                       return_by=due, issued_by=user.id, is_demo=e.is_demo))
+        audit(s, "subpoena.issue", user.id, target=ref, recipient=clean(recipient, 300))
+        s.commit()
+    return go(f"/labor/events/{ref}#subpoenas", "Subpoena issued. It is enforceable in United States district court, "
+                                               "subject to privilege and applicable privacy law.")
+
+
+@router.post("/subpoenas/{sid}")
+def subpoena_update(request: Request, sid: int, status: str = Form(...), response: str = Form(...), user: User = Depends(labor)):
+    if status not in SUBPOENA_STATUSES or status == "issued" or not response.strip():
+        raise HTTPException(400, "Choose what happened and record it.")
+    with SessionLocal() as s:
+        sp = s.get(Subpoena, sid)
+        if sp is None or sp.is_demo != is_preview():
+            raise HTTPException(404)
+        if sp.status not in ("issued", "contested"):
+            raise HTTPException(400, "This subpoena is closed.")
+        ref = s.get(Event, sp.event_id).ref
+        sp.status, sp.response = status, clean(response)
+        audit(s, f"subpoena.{status}", user.id, target=ref)
+        s.commit()
+    note = {"complied": "Recorded: the records were produced. They stay private.",
+            "contested": "Recorded: the recipient contests the subpoena, claiming privilege or privacy.",
+            "withdrawn": "The subpoena is withdrawn.",
+            "referred": "Referred for enforcement in United States district court."}[status]
+    return go(f"/labor/events/{ref}#subpoenas", note)
 
 
 @router.post("/events/{ref}/end-evidence")

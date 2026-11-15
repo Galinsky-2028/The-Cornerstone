@@ -1,5 +1,15 @@
 {% extends "layout.html" %}
-{% block title %}Exchange administration · The Cornerstone{% endblock %}
+{% block title %}Exchange administration · The Cornerstone
+<section class="card" id="matches"><h2>Matches in negotiation</h2>
+  <p class="small muted">Section 5(c): negotiations conclude within 180 days of matching, with one extension of up to {{ max_extension }} days available to every match on the round's published readiness conditions.</p>
+  {% for m in matches %}
+  <div class="ballot"><p><strong>{{ m.offer.ref }}</strong> {{ m.offer.trade }} ↔ {{ m.association.ref }} · negotiate by {{ m.negotiation_deadline.strftime('%d %b %Y') }}{% if m.extension_days %} (extended {{ m.extension_days }} days: {{ m.extension_reasons }}){% endif %}</p>
+    {% if not m.extension_days %}<form method="post" action="/commerce/matches/{{ m.id }}/extend" class="row">{{ csrf_field(request) }}
+      <label>Days<input name="days" inputmode="numeric" required></label><label>How the published conditions are met<input name="reasons" required></label>
+      <button class="btn small" type="submit">Extend once</button></form>{% endif %}</div>
+  {% else %}<p class="muted">None.</p>{% endfor %}
+</section>
+{% endblock %}
 {% block page %}
 <h1>Department of Commerce: the Exchange</h1>
 <p class="prose muted">Verify that State offers are complete, publish them at least 90 days before rankings close, and run the published matching rule. Commerce never scores merit and never sees a ranking before the deadline.</p>
@@ -14,6 +24,25 @@
       <button class="btn" name="decision" value="returned" type="submit">Return to the State</button></form></div>
   {% else %}<p class="muted">Nothing waiting.</p>{% endfor %}
 </section>
+
+{% if federal %}
+<section class="card" id="federal"><h2>Federal authorizations (section 7(a))</h2>
+  <p class="small muted">A federally prohibited activity is ranked only after an Act of Congress expressly authorizes it, names each displaced prohibition and the administering regulator, and prescribes the activity, persons, territory, duration and safeguards, and the regulator issues an authorization with public findings. Commerce records and publishes it; no general exemption from federal law is delegated.</p>
+  {% for o in submitted|list + verified|list if o.id in federal %}{% set a = federal[o.id] %}
+  <form method="post" action="/commerce/offers/{{ o.ref }}/federal" class="ballot">{{ csrf_field(request) }}
+    <p><strong>{{ o.ref }}</strong> {{ o.trade }} · {{ o.state_name }}{% if federal_problems[o.id] %}<br><span class="small">Not yet rankable: {{ federal_problems[o.id]|join(' ') }}</span>{% else %} · <span class="status issued">rankable</span>{% endif %}</p>
+    <div class="row"><label>Act of Congress<input name="act_citation" value="{{ a.act_citation if a else '' }}"></label><label>Administering regulator<input name="regulator" value="{{ a.regulator if a else '' }}"></label></div>
+    <label>Displaced federal prohibitions<textarea name="displaced_prohibitions" rows="2">{{ a.displaced_prohibitions if a else '' }}</textarea></label>
+    <label>Activity<textarea name="activity" rows="2">{{ a.activity if a else '' }}</textarea></label>
+    <div class="row"><label>Persons<input name="persons" value="{{ a.persons if a else '' }}"></label><label>Territory<input name="territory" value="{{ a.territory if a else '' }}"></label></div>
+    <div class="row"><label>In effect from<input type="date" name="starts_on" value="{{ a.starts_on.isoformat() if a and a.starts_on else '' }}"></label><label>Until<input type="date" name="ends_on" value="{{ a.ends_on.isoformat() if a and a.ends_on else '' }}"></label></div>
+    <label>Safeguards<textarea name="safeguards" rows="2">{{ a.safeguards if a else '' }}</textarea></label>
+    <label>Regulator's public findings<textarea name="findings" rows="2">{{ a.findings if a else '' }}</textarea></label>
+    <label>Regulator's decision<select name="status">{% for st in federal_statuses %}<option value="{{ st }}" {% if a and a.status == st %}selected{% endif %}>{{ st }}</option>{% endfor %}</select></label>
+    <button class="btn" type="submit">Record and publish</button></form>
+  {% endfor %}
+</section>
+{% endif %}
 
 <section class="card"><h2>Verified offers to publish</h2>
   {% set open_rounds = rounds|selectattr('status', 'equalto', 'open')|list %}
@@ -35,8 +64,19 @@
   {% else %}<tr><td colspan="7" class="muted">No rounds yet.</td></tr>{% endfor %}</table>
   <form method="post" action="/commerce/rounds/new" class="row ballot">{{ csrf_field(request) }}
     <label>New round name<input name="name" required placeholder="Round 2"></label>
+    <label>Readiness conditions for a negotiation extension <span class="small">(optional; without them no match in this round may be extended)</span><input name="extension_conditions"></label>
     <label>Rankings close (at least {{ min_close.strftime('%d %b %Y') }}){% if is_preview() %} <span class="small">· any date in the preview</span>{% endif %}<input type="date" name="rankings_close" required></label>
     <button class="btn" type="submit">Open the round</button></form>
   <p class="small muted">The round's random seed is drawn and published when it opens. Ties between associations with the same priority date are broken by SHA-256 of the seed and the association number, which anyone can recompute.</p>
+</section>
+
+<section class="card" id="matches"><h2>Matches in negotiation</h2>
+  <p class="small muted">Section 5(c): negotiations conclude within 180 days of matching, with one extension of up to {{ max_extension }} days available to every match on the round's published readiness conditions.</p>
+  {% for m in matches %}
+  <div class="ballot"><p><strong>{{ m.offer.ref }}</strong> {{ m.offer.trade }} ↔ {{ m.association.ref }} · negotiate by {{ m.negotiation_deadline.strftime('%d %b %Y') }}{% if m.extension_days %} (extended {{ m.extension_days }} days: {{ m.extension_reasons }}){% endif %}</p>
+    {% if not m.extension_days %}<form method="post" action="/commerce/matches/{{ m.id }}/extend" class="row">{{ csrf_field(request) }}
+      <label>Days<input name="days" inputmode="numeric" required></label><label>How the published conditions are met<input name="reasons" required></label>
+      <button class="btn small" type="submit">Extend once</button></form>{% endif %}</div>
+  {% else %}<p class="muted">None.</p>{% endfor %}
 </section>
 {% endblock %}
