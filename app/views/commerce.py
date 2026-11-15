@@ -13,8 +13,8 @@ from sqlalchemy import select
 from foundation.db import SessionLocal, audit
 from foundation.models import User
 
-from ..models import FEDERAL_STATUSES, Association, Ballot, FederalAuthorization, Match, Offer, Ranking, Round
-from ..program import association_priority, is_preview, require_program_role, visible
+from ..models import FEDERAL_STATUSES, Association, Ballot, Consortium, FederalAuthorization, Match, Offer, Ranking, Round
+from ..program import is_preview, require_program_role, round_applicants, visible
 from ..rules import (
     MAX_EXTENSION_DAYS, NEGOTIATION_DAYS, OFFER_PUBLIC_DAYS, Applicant, bundle_problems, days_from, districts_of,
     extension_problem, federal_problems, run_matching,
@@ -115,9 +115,10 @@ def publish(request: Request, ref: str, round_id: str = Form(...), user: User = 
 
 
 def _readable(line: str, assoc_refs: dict[int, str], offer_refs: dict[int, str]) -> str:
-    line = re.sub(r"Association (\d+)", lambda m: assoc_refs.get(int(m.group(1)), m.group(0)), line)
+    """Applicant numbers become references: associations by their id, consortia by minus their id."""
+    line = re.sub(r"Association (-?\d+)", lambda m: assoc_refs.get(int(m.group(1)), m.group(0)), line)
     line = re.sub(r"offer (\d+)", lambda m: "offer " + offer_refs.get(int(m.group(1)), m.group(1)), line)
-    return re.sub(r"(?<=[;,] )(\d+)(?= moves)", lambda m: assoc_refs.get(int(m.group(1)), m.group(1)), line)
+    return re.sub(r"(?<=[;,] )(-?\d+)(?= moves)", lambda m: assoc_refs.get(int(m.group(1)), m.group(1)), line)
 
 
 @router.post("/rounds/{round_id}/run")
@@ -143,25 +144,44 @@ def run_round(request: Request, round_id: int, user: User = Depends(commerce)):
         for o in unauthorized:  # s.7(a): an authorization that lapsed or was withdrawn takes the offer out of the round
             o.status = "verified"
         offers = [o for o in offers if o not in unauthorized]
-        applicants, assoc_refs = [], {}
-        for rk in s.scalars(select(Ranking).where(Ranking.round_id == r.id, Ranking.status == "submitted")).all():
-            a = rk.association
-            p = association_priority(s, a.id)
-            if a.status != "roll_closed" or p is None:
+        applicants, assoc_refs, entries, excluded = [], {}, {}, []
+        for c in s.scalars(select(Consortium).where(Consortium.round_id == r.id, Consortium.status == "pending_votes")).all():
+            for bid in c.ballot_ids or []:
+                b = s.get(Ballot, bid)
+                if b is not None and b.status == "open":
+                    settle_ballot(s, b, closing=True)
+            if c.status == "pending_votes":
+                c.status = "rejected"  # not approved by every constituent before rankings closed
+        s.flush()
+        for e in round_applicants(s, r.id):
+            if e["consortium"] is not None and e["consortium"].status != "approved":
                 continue
-            applicants.append(Applicant(association_id=a.id, priority_date=p, ranking=list(rk.offer_ids)))
-            assoc_refs[a.id] = a.ref
+            if e["problem"] or e.get("status_ok") is False:
+                if e["consortium"] is not None:
+                    e["consortium"].status = "excluded"
+                excluded.append(f"{e['ref']} is not entered: {e['problem'] or 'it is not free to be matched'}.")
+                continue
+            applicants.append(Applicant(association_id=e["key"], priority_date=e["priority"], ranking=e["ranking"]))
+            assoc_refs[e["key"]] = e["ref"]
+            entries[e["key"]] = e
         held, log = run_matching(applicants, [o.id for o in offers], r.random_seed)
         offer_refs = {o.id: o.ref for o in offers}
         pri = {a.association_id: a.priority_date for a in applicants}
-        for offer_id, assoc_id in held.items():
-            s.add(Match(round_id=r.id, association_id=assoc_id, offer_id=offer_id, priority_date=pri[assoc_id],
-                        negotiation_deadline=days_from(date.today(), NEGOTIATION_DAYS), is_demo=r.is_demo))
+        for offer_id, key in held.items():
+            e = entries[key]
+            c = e["consortium"]
+            s.add(Match(round_id=r.id, association_id=e["association_ids"][0], offer_id=offer_id, priority_date=pri[key],
+                        negotiation_deadline=days_from(date.today(), NEGOTIATION_DAYS), consortium_id=c.id if c else None,
+                        is_demo=r.is_demo))
             s.get(Offer, offer_id).status = "matched"
-            s.get(Association, assoc_id).status = "matched"
+            for aid in e["association_ids"]:
+                s.get(Association, aid).status = "matched"
+            if c is not None:
+                c.status = "matched"
         for o in offers:
             if o.id not in held:
                 o.status = "verified"  # unmatched offers return to the Exchange for the next round
+        log = excluded + log
         r.status, r.matched_on = "matched", date.today()
         r.match_log = [_readable(x, assoc_refs, offer_refs) for x in log] or ["No rankings were entered."]
         audit(s, "round.run", user.id, target=str(r.id), matches=len(held), applicants=len(applicants))

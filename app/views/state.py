@@ -292,9 +292,23 @@ def send_to_members(request: Request, match_id: int, user: User = Depends(offici
                                 f"{DRAFT_COMPACT_PUBLIC_DAYS} days before execution."),
                    payload={"compact_id": k.id}, closes_on=days_from(date.today(), DRAFT_COMPACT_PUBLIC_DAYS),
                    created_by=user.id, is_demo=is_preview())
+        b.payload = {"compact_id": k.id}
         s.add(b)
         s.flush()
         k.status, k.ballot_id = "member_vote", b.id
+        if m.consortium_id:
+            # s.4(c): every constituent's founding units decide separately; each keeps its own governance
+            from ..models import Consortium
+
+            c = s.get(Consortium, m.consortium_id)
+            ids = [b.id]
+            for aid in c.association_ids[1:]:
+                other = Ballot(association_id=aid, kind="compact", title=b.title, description=b.description,
+                               payload={"compact_id": k.id}, closes_on=b.closes_on, created_by=user.id, is_demo=is_preview())
+                s.add(other)
+                s.flush()
+                ids.append(other.id)
+            c.compact_ballot_ids = ids
         audit(s, "compact.send", user.id, target=k.ref)
         s.commit()
     return go(f"/state/matches/{match_id}", "Sent to the members' vote and published for 30 days. It is executed when a "
@@ -313,7 +327,12 @@ def negotiation_failed(request: Request, match_id: int, reasons: str = Form(...)
         if date.today() <= m.negotiation_deadline and not is_preview():
             raise HTTPException(400, f"Negotiation continues until {m.negotiation_deadline:%d %B %Y}.")
         m.status = "failed"
-        m.association.status = "roll_closed"
+        for a in _constituents(s, m):
+            a.status = "roll_closed"
+        if m.consortium_id:
+            from ..models import Consortium
+
+            s.get(Consortium, m.consortium_id).status = "failed"
         audit(s, "match.failed", user.id, target=m.offer.ref, reasons=clean(reasons, 2000))
         s.flush()
         offer_to, assoc_to = successor_matches(s, m)
@@ -328,54 +347,65 @@ def negotiation_failed(request: Request, match_id: int, reasons: str = Form(...)
     return go("/state", " ".join(parts))
 
 
+def _constituents(s, m: Match) -> list:
+    from ..models import Association, Consortium
+
+    if m.consortium_id:
+        return [s.get(Association, i) for i in s.get(Consortium, m.consortium_id).association_ids]
+    return [m.association]
+
+
 def successor_matches(s, failed: Match):
-    """Create the successor matches after `failed`. Returns (association the offer went to, offer the association
-    went to); either may be None."""
-    from ..models import Association, Ranking, Round
-    from ..program import association_priority
+    """Create the successor matches after `failed`. Returns (entrant the offer went to, offer the unsuccessful
+    entrant went to); either may be None. Entrants are associations and consortia from the round's rankings."""
+    from ..models import Association, Consortium, Round
+    from ..program import round_applicants
 
     r = s.get(Round, failed.round_id)
-    failed_pairs = {(x.association_id, x.offer_id) for x in s.scalars(select(Match).where(
-        Match.round_id == r.id, Match.status == "failed")).all()}
+    failed_pairs = {(x.consortium_id and -x.consortium_id or x.association_id, x.offer_id)
+                    for x in s.scalars(select(Match).where(Match.round_id == r.id, Match.status == "failed")).all()}
+    entrants = [e for e in round_applicants(s, r.id) if not e["problem"]]
 
-    def free(a: Association) -> bool:
-        active = s.scalar(select(Match.id).where(Match.association_id == a.id, Match.status.in_(["negotiating", "compacted"])))
-        return active is None and a.status == "roll_closed"
+    def free(e) -> bool:
+        for aid in e["association_ids"]:
+            a = s.get(Association, aid)
+            active = s.scalar(select(Match.id).where(Match.association_id == aid, Match.status.in_(["negotiating", "compacted"])))
+            if active is not None or a.status != "roll_closed":
+                return False
+        return True
 
-    def new_match(a: Association, o: Offer) -> None:
-        p = association_priority(s, a.id) or failed.priority_date
-        s.add(Match(round_id=r.id, association_id=a.id, offer_id=o.id, priority_date=p,
+    def new_match(e, o: Offer) -> None:
+        s.add(Match(round_id=r.id, association_id=e["association_ids"][0], offer_id=o.id,
+                    priority_date=e["priority"] or failed.priority_date,
                     negotiation_deadline=days_from(date.today(), NEGOTIATION_DAYS), successor_of=failed.id,
-                    is_demo=failed.is_demo))
-        a.status, o.status = "matched", "matched"
+                    consortium_id=e["consortium"].id if e["consortium"] else None, is_demo=failed.is_demo))
+        for aid in e["association_ids"]:
+            s.get(Association, aid).status = "matched"
+        if e["consortium"]:
+            e["consortium"].status = "matched"
+        o.status = "matched"
         s.flush()
 
-    rankings = s.scalars(select(Ranking).where(Ranking.round_id == r.id, Ranking.status == "submitted")).all()
-    # 1. the offer goes to the next willing association that ranked it, by priority and then the public draw
-    candidates = []
-    for rk in rankings:
-        a = rk.association
-        if failed.offer_id in (rk.offer_ids or []) and (a.id, failed.offer_id) not in failed_pairs and free(a):
-            p = association_priority(s, a.id)
-            if p is not None:
-                candidates.append((p, tiebreak_key(r.random_seed, a.id), a))
+    # 1. the offer goes to the next willing entrant that ranked it, by priority and then the public draw
+    candidates = [e for e in entrants if failed.offer_id in e["ranking"] and (e["key"], failed.offer_id) not in failed_pairs
+                  and e["priority"] is not None and free(e)]
     offer_to = None
     if candidates:
-        offer_to = min(candidates, key=lambda c: (c[0], c[1]))[2]
+        offer_to = min(candidates, key=lambda e: (e["priority"], tiebreak_key(r.random_seed, e["key"])))
         new_match(offer_to, failed.offer)
-    # 2. the unsuccessful association proceeds to its next choice that is still available
+    # 2. the unsuccessful entrant proceeds to its next choice that is still available
     assoc_to = None
-    rk = next((x for x in rankings if x.association_id == failed.association_id), None)
-    a = failed.association
-    if rk and free(a):
-        ids = list(rk.offer_ids or [])
+    key = -failed.consortium_id if failed.consortium_id else failed.association_id
+    me = next((e for e in entrants if e["key"] == key), None)
+    if me and free(me):
+        ids = me["ranking"]
         after = ids[ids.index(failed.offer_id) + 1:] if failed.offer_id in ids else []
         for oid in after:
             o = s.get(Offer, oid)
             taken = s.scalar(select(Match.id).where(Match.offer_id == oid, Match.status.in_(["negotiating", "compacted"])))
             if o is not None and o.status == "verified" and o.round_id == r.id and taken is None \
-                    and (a.id, oid) not in failed_pairs:
-                new_match(a, o)
+                    and (key, oid) not in failed_pairs:
+                new_match(me, o)
                 assoc_to = o
                 break
-    return offer_to, assoc_to
+    return (s.get(Association, offer_to["association_ids"][0]) if offer_to else None), assoc_to

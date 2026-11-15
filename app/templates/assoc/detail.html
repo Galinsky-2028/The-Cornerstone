@@ -58,10 +58,25 @@
       {% endfor %}</div>
       <button class="btn primary" type="submit">Send to the members' vote</button> <a class="small" href="/exchange#offers">Read the offers</a>
     </form>
+    <form method="post" action="/app/associations/{{ a.ref }}/consortium" class="ballot">{{ csrf_field(request) }}
+      <input type="hidden" name="round_id" value="{{ r.id }}">
+      <h3>Or enter {{ r.name }} as a consortium</h3>
+      <p class="small muted">Section 5(b): associations may rank together only if the members of each approve by a majority of all their founding units, no founding roll changes, and the combined units fit every ranked offer. Each association keeps its own governance.</p>
+      <div class="row"><label>Other associations (references, comma-separated)<input name="partners" placeholder="A-002" required></label><label>Consortium name<input name="name"></label></div>
+      <div class="row">{% for i in range(1, [offers|length, 5]|min + 1) %}
+        <label>Choice {{ i }}<select name="rank{{ i }}"><option value="">—</option>{% for o in offers %}<option value="{{ o.ref }}">{{ o.ref }} · {{ o.trade }} ({{ o.state_name }})</option>{% endfor %}</select></label>
+      {% endfor %}</div>
+      <button class="btn" type="submit">Propose the consortium to every association's members</button>
+    </form>
     {% endif %}{% endfor %}
   {% endif %}
 </section>
 {% endif %}
+
+{% if consortia %}
+<section class="card" id="consortia"><h2>Consortia</h2>
+  {% for c in consortia %}<p><strong>{{ c.ref }}</strong> {{ c.name }}: {% for i in c.association_ids %}{{ assoc_refs.get(i, '') }}{% if not loop.last %}, {% endif %}{% endfor %} · <span class="status {{ c.status }}">{{ c.status|label }}</span></p>{% endfor %}
+</section>{% endif %}
 
 {% if matches %}
 <section class="card"><h2>Matches</h2>
@@ -121,7 +136,8 @@
 
 <section class="card"><h2>Founding roll</h2>
   <p class="small muted">Published without names once the roll closes. Members see each other's occupation and event.</p>
+  {% if cohort %}<p class="small">{{ cohort|length }} cohort applicant{{ 's' if cohort|length != 1 }} whose claims are still under review hold no unit or vote yet. Section 4(a): the roll cannot close until each is decided; a certified claim then becomes a founding unit and a denied one leaves the roll.</p>{% endif %}
   <table><tr><th>Unit</th><th>Event</th><th>Occupation</th><th>Board</th></tr>
-  {% for m in members %}<tr><td>{{ loop.index }}{% if member and m.id == member.id %} (you){% endif %}</td><td>{{ m.claim.event.ref }}</td><td>{{ m.claim.occupation }}</td><td>{{ 'Board' if m.on_board }}</td></tr>{% endfor %}</table>
+  {% for m in members %}<tr><td>{% if m.status == 'cohort' %}cohort{% else %}{{ loop.index }}{% endif %}{% if member and m.id == member.id %} (you){% endif %}</td><td>{{ m.claim.event.ref }}</td><td>{{ m.claim.occupation }}</td><td>{{ 'Board' if m.on_board }}</td></tr>{% endfor %}</table>
 </section>
 {% endblock %}

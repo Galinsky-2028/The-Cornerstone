@@ -180,6 +180,13 @@ def _claim(s, ref: str) -> Claim:
     return c
 
 
+def _promote_cohort(s, c: Claim) -> None:
+    """s.4(a): a cohort applicant certified while the roll is open becomes a founding unit."""
+    m = s.scalar(select(Membership).where(Membership.claim_id == c.id, Membership.status == "cohort"))
+    if m is not None and c.status == "certified":
+        m.status = "founding"
+
+
 @router.get("/claims/{ref}", response_class=HTMLResponse)
 def claim_review(request: Request, ref: str, user: User = Depends(labor)):
     with SessionLocal() as s:
@@ -200,6 +207,7 @@ def claim_decide(request: Request, ref: str, decision: str = Form(...), reasons:
             raise HTTPException(403, "An examiner may not decide their own claim.")
         c.status = "certified" if decision == "certify" else "denied"
         c.decision_reasons, c.decided_by, c.decided_on = clean(reasons), user.id, date.today()
+        _promote_cohort(s, c)
         audit(s, f"claim.{c.status}", user.id, target=ref)
         s.commit()
     return go("/labor#claims", f"{ref} is {c.status}. The worker has been sent the written reasons.")
@@ -217,6 +225,7 @@ def hearing_decide(request: Request, ref: str, outcome: str = Form(...), reasons
             raise HTTPException(403, "The hearing must be decided by someone other than the original examiner.")
         c.status = "certified" if outcome == "grant" else "denied"
         c.hearing_outcome = clean(reasons)
+        _promote_cohort(s, c)
         c.decided_on = date.today() if outcome == "grant" else c.decided_on
         audit(s, f"claim.hearing_{outcome}", user.id, target=ref)
         s.commit()

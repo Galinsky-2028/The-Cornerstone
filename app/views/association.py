@@ -14,10 +14,10 @@ from foundation.db import SessionLocal, audit
 from foundation.models import User
 
 from ..models import (
-    FUND_CATEGORIES, Association, Ballot, Claim, Compact, DemoAccount, FundAdvance, Match, Membership, Offer,
+    FUND_CATEGORIES, Association, Ballot, Claim, Compact, Consortium, DemoAccount, FundAdvance, Match, Membership, Offer,
     QuarterlyReport, Ranking, Restoration, Round, SupervisorDecision, Vote,
 )
-from ..program import association_priority, founding_units, is_preview, next_ref, visible
+from ..program import association_priority, founding_units, is_preview, next_ref, roll_size, visible
 from ..rules import (
     ENROLLMENT_DAYS, MAX_FOUNDING_UNITS, MIN_FOUNDING_UNITS, ballot_outcome, days_from, fund_remittance, state_share,
     votes_needed,
@@ -75,9 +75,34 @@ def settle_ballot(s, b: Ballot, closing: bool = False) -> str:
         if rk:
             rk.status = "submitted" if outcome == "passed" else "rejected"
             rk.submitted_on = date.today() if outcome == "passed" else None
+    elif b.kind == "consortium":
+        c = s.get(Consortium, (b.payload or {}).get("consortium_id"))
+        if c is not None and c.status == "pending_votes":
+            if outcome == "failed":
+                c.status = "rejected"
+            elif all(getattr(s.get(Ballot, i), "status", "") == "passed" for i in c.ballot_ids):
+                c.status = "approved"
+                c.units_snapshot = {str(i): founding_units(s, i) for i in c.association_ids}
     elif b.kind == "compact":
-        k = s.scalar(select(Compact).where(Compact.ballot_id == b.id))
-        if k:
+        k = s.get(Compact, (b.payload or {}).get("compact_id")) or s.scalar(select(Compact).where(Compact.ballot_id == b.id))
+        c = s.get(Consortium, k.match.consortium_id) if k and k.match.consortium_id else None
+        if k and c is not None and k.status == "member_vote":
+            # s.4(c): a consortium's compact needs a majority of all founding units in EVERY constituent
+            if outcome == "passed" and all(getattr(s.get(Ballot, i), "status", "") == "passed" for i in c.compact_ballot_ids):
+                k.status, k.executed_on = "executed", date.today()
+                k.operative_on = k.operative_on or date.today()
+                k.offer.status, k.match.status = "compacted", "compacted"
+                for aid in c.association_ids:
+                    s.get(Association, aid).status = "compact"
+                    if s.scalar(select(Restoration).where(Restoration.association_id == aid)) is None:
+                        s.add(Restoration(association_id=aid, compact_id=k.id, checks={}, status="pending", is_demo=k.is_demo))
+            elif outcome == "failed":
+                k.status = "drafting"
+                for i in c.compact_ballot_ids:
+                    other = s.get(Ballot, i)
+                    if other is not None and other.status == "open":
+                        other.status = "failed"
+        elif k:
             if outcome == "passed":
                 k.status, k.executed_on = "executed", date.today()
                 k.operative_on = k.operative_on or date.today()
@@ -103,8 +128,12 @@ def associations(request: Request, user: User = Depends(require_user)):
         my_claims = s.scalars(visible(select(Claim), Claim).where(Claim.user_id == user.id, Claim.status == "certified")).all()
         in_roll = set(s.scalars(select(Membership.claim_id).where(Membership.claim_id.in_([c.id for c in my_claims]))).all())
         free_claims = [c for c in my_claims if c.id not in in_roll]
+        reviewing = s.scalars(visible(select(Claim), Claim).where(Claim.user_id == user.id, Claim.status.in_(UNDER_REVIEW))).all()
+        on_roll = set(s.scalars(select(Membership.claim_id).where(Membership.claim_id.in_([c.id for c in reviewing])))
+                      .all()) if reviewing else set()
+        cohort_claims = [c for c in reviewing if c.id not in on_roll]
         data = [{"a": a, "units": founding_units(s, a.id)} for a in rows]
-        return page(request, "assoc/list.html", {"rows": data, "free_claims": free_claims})
+        return page(request, "assoc/list.html", {"rows": data, "free_claims": free_claims, "cohort_claims": cohort_claims})
 
 
 @router.post("/app/associations/new")
@@ -131,23 +160,33 @@ def association_new(request: Request, name: str = Form(...), principal_state: st
                                           f"{ENROLLMENT_DAYS} days once it is chartered.")
 
 
+UNDER_REVIEW = ("filed", "hearing_requested")
+
+
 @router.post("/app/associations/{ref}/join")
 def association_join(request: Request, ref: str, claim_ref: str = Form(...), user: User = Depends(require_user)):
+    """A certified claim joins as a founding unit. A timely applicant whose claim is still under review may elect this
+    association as a cohort (s.4(a)); the claim becomes a unit only if certified before the roll closes."""
     with SessionLocal() as s:
         a = _assoc(s, ref)
         if a.status != "enrolling":
             raise HTTPException(400, "This association is not enrolling.")
         c = s.scalar(visible(select(Claim), Claim).where(Claim.ref == claim_ref, Claim.user_id == user.id,
-                                                        Claim.status == "certified"))
+                                                        Claim.status.in_(("certified",) + UNDER_REVIEW)))
         if c is None:
-            raise HTTPException(400, "Joining requires your own certified claim.")
+            raise HTTPException(400, "Joining requires your own claim, certified or still under review.")
         if s.scalar(select(Membership).where(Membership.claim_id == c.id)):
             raise HTTPException(400, "That claim is already on a founding roll.")
-        if founding_units(s, a.id) >= MAX_FOUNDING_UNITS:
+        if roll_size(s, a.id) >= MAX_FOUNDING_UNITS:
             raise HTTPException(400, f"The founding roll is full at {MAX_FOUNDING_UNITS:,} units.")
-        s.add(Membership(association_id=a.id, claim_id=c.id, user_id=user.id))
-        audit(s, "association.join", user.id, target=ref, claim=c.ref)
+        status = "founding" if c.status == "certified" else "cohort"
+        s.add(Membership(association_id=a.id, claim_id=c.id, user_id=user.id, status=status))
+        audit(s, "association.join", user.id, target=ref, claim=c.ref, status=status)
         s.commit()
+    if status == "cohort":
+        return go(f"/app/associations/{ref}", "You have elected this association while your claim is under review. You hold a "
+                                              "founding unit, with a vote, once Labor certifies the claim; the roll cannot "
+                                              "close until it is decided.")
     return go(f"/app/associations/{ref}", "You hold one founding unit. It cannot be sold, pledged or transferred.")
 
 
@@ -183,8 +222,13 @@ def association_page(request: Request, ref: str, user: User = Depends(require_us
                                     .group_by(Membership.opportunity)).all())
         repaid = sum(r.fund_remittance for r in reports)
         seed_ids = set(s.scalars(select(DemoAccount.user_id).where(DemoAccount.persona == "seed")).all())
+        consortia = [c for c in s.scalars(visible(select(Consortium), Consortium).order_by(Consortium.id.desc())).all()
+                     if a.id in (c.association_ids or [])]
+        assoc_refs = {x.id: x.ref for x in s.scalars(visible(select(Association), Association)).all()}
+        cohort = [m for m in members if m.status == "cohort"]
         return page(request, "assoc/detail.html", {
-            "a": a, "member": me, "members": members, "units": len(members), "ballots": ballot_rows,
+            "consortia": consortia, "assoc_refs": assoc_refs, "cohort": cohort,
+            "a": a, "member": me, "members": members, "units": len(members) - len(cohort), "ballots": ballot_rows,
             "open_rounds": open_rounds, "round_offers": round_offers, "rankings": rankings, "offer_refs": offer_refs, "round_names": round_names,
             "matches": matches, "compact": compact, "reports": reports, "sup": sup, "advances": advances,
             "restoration": restoration, "opportunities": OPPORTUNITIES, "opp_counts": opp_counts,
@@ -203,6 +247,18 @@ def close_roll(request: Request, ref: str, now: str = Form(""), user: User = Dep
         if date.today() < a.enrollment_closes:
             preview_only()
             a.enrollment_closes = date.today()
+        # s.4(a): a cohort's roll must be resolved before it closes
+        cohort = s.scalars(select(Membership).where(Membership.association_id == a.id, Membership.status == "cohort")).all()
+        pending = [m.claim.ref for m in cohort if m.claim.status in UNDER_REVIEW]
+        if pending:
+            raise HTTPException(400, "The roll cannot close while claims on it are still under review: " + ", ".join(pending))
+        for m in cohort:
+            if m.claim.status == "certified":
+                m.status = "founding"
+            else:
+                audit(s, "association.cohort_removed", user.id, target=ref, claim=m.claim.ref, claim_status=m.claim.status)
+                s.delete(m)
+        s.flush()
         if founding_units(s, a.id) < MIN_FOUNDING_UNITS:
             raise HTTPException(400, f"A founding roll needs at least {MIN_FOUNDING_UNITS} units.")
         a.status = "roll_closed"
@@ -249,6 +305,8 @@ async def propose_rankings(request: Request, ref: str, user: User = Depends(requ
         if s.scalar(select(Ranking).where(Ranking.round_id == r.id, Ranking.association_id == a.id,
                                           Ranking.status.in_(["pending_vote", "submitted"]))):
             raise HTTPException(400, "This association already has a ranking for this round.")
+        if _consortium_in_round(s, a.id, r.id):
+            raise HTTPException(400, "This association is entering this round as part of a consortium.")
         desc = "Ranking, most preferred first: " + "; then ".join(f"{o.ref} {o.trade} ({o.district}, {o.state_name})" for o in chosen)
         b = Ballot(association_id=a.id, kind="rankings", title=f"Approve our sealed ranking for {r.name}",
                    description=desc + ". Passing requires a majority of ALL founding units, not just of those who vote.",
@@ -262,6 +320,82 @@ async def propose_rankings(request: Request, ref: str, user: User = Depends(requ
         s.commit()
     return go(f"/app/associations/{ref}#ballots", "The ranking is sent to the members. It stays sealed from everyone outside "
                                                   "the association until the round closes.")
+
+
+def _consortium_in_round(s, association_id: int, round_id: int) -> Consortium | None:
+    for c in s.scalars(select(Consortium).where(Consortium.round_id == round_id,
+                                                Consortium.status.in_(["pending_votes", "approved", "matched"]))).all():
+        if association_id in (c.association_ids or []):
+            return c
+    return None
+
+
+@router.post("/app/associations/{ref}/consortium")
+async def propose_consortium(request: Request, ref: str, user: User = Depends(require_user)):
+    """s.5(b): the board proposes entering a round together with other associations. Each constituent's members must
+    approve by a majority of all its founding units (s.4(c)); rolls must stay unchanged; combined units must fit every
+    ranked offer; each constituent keeps its own governance."""
+    form = await request.form()
+    with SessionLocal() as s:
+        a = _assoc(s, ref)
+        _board(s, a, user)
+        r = s.get(Round, to_int(form.get("round_id")))
+        if r is None or r.is_demo != is_preview() or r.status != "open":
+            raise HTTPException(400, "Choose an open round.")
+        refs = [x.strip().upper() for x in str(form.get("partners", "")).replace(";", ",").split(",") if x.strip()]
+        partners = []
+        for pref in refs:
+            p = s.scalar(visible(select(Association), Association).where(Association.ref == pref))
+            if p is None or p.id == a.id or p in partners:
+                raise HTTPException(400, f"{pref} is not another association.")
+            partners.append(p)
+        if not partners:
+            raise HTTPException(400, "Name at least one other association.")
+        members = [a] + partners
+        for x in members:
+            if x.status != "roll_closed":
+                raise HTTPException(400, f"{x.ref} does not have a closed founding roll free to be matched.")
+            if s.scalar(select(Ranking).where(Ranking.round_id == r.id, Ranking.association_id == x.id,
+                                              Ranking.status.in_(["pending_vote", "submitted"]))) or _consortium_in_round(s, x.id, r.id):
+                raise HTTPException(400, f"{x.ref} has already entered this round.")
+        published = {o.ref: o for o in s.scalars(select(Offer).where(Offer.round_id == r.id, Offer.status == "published")).all()}
+        chosen: list[Offer] = []
+        for i in range(1, 6):
+            v = str(form.get(f"rank{i}", "")).strip()
+            if v and v in published and published[v] not in chosen:
+                chosen.append(published[v])
+        if not chosen:
+            raise HTTPException(400, "Rank at least one offer.")
+        units = {x.id: founding_units(s, x.id) for x in members}
+        total = sum(units.values())
+        too_small = [o.ref for o in chosen if total > o.max_founding_units]
+        if too_small:
+            raise HTTPException(400, f"The consortium's {total:,} founding units exceed what these offers can serve: "
+                                     + ", ".join(too_small))
+        c = Consortium(ref=next_ref(s, Consortium, "CN", 3), name=clean(str(form.get("name", "")), 300) or
+                       " + ".join(x.ref for x in members), round_id=r.id, association_ids=[x.id for x in members],
+                       offer_ids=[o.id for o in chosen], units_snapshot={str(k): v for k, v in units.items()},
+                       created_by=user.id, is_demo=is_preview())
+        s.add(c)
+        s.flush()
+        desc = (f"Enter {r.name} as consortium {c.ref} with " + ", ".join(x.ref + " " + x.name for x in members if x.id != a.id)
+                + ". Joint ranking, most preferred first: " + "; then ".join(f"{o.ref} {o.trade} ({o.district})" for o in chosen)
+                + f". Combined founding units: {total:,}. Each association keeps its own governance; any compact needs "
+                  "the approval of a majority of all founding units in every association.")
+        ids = []
+        for x in members:
+            b = Ballot(association_id=x.id, kind="consortium", title=f"Approve consortium {c.ref} for {r.name}",
+                       description=desc, payload={"consortium_id": c.id}, closes_on=r.rankings_close, created_by=user.id,
+                       is_demo=is_preview())
+            s.add(b)
+            s.flush()
+            ids.append(b.id)
+        c.ballot_ids = ids
+        audit(s, "consortium.propose", user.id, target=c.ref, associations=[x.ref for x in members])
+        s.commit()
+        cref = c.ref
+    return go(f"/app/associations/{ref}#ballots", f"Consortium {cref} is proposed. It enters the round only if the members of "
+                                                  "every association approve it, and only if no founding roll changes.")
 
 
 # --------------------------------------------------------------------------
@@ -281,7 +415,7 @@ def vote(request: Request, ballot_id: int, choice: str = Form(...), user: User =
     with SessionLocal() as s:
         b = _ballot(s, ballot_id)
         m = _my_membership(s, b.association, user)
-        if m is None:
+        if m is None or m.status != "founding":
             raise HTTPException(403, "Only founding unit holders vote.")
         if b.status != "open":
             raise HTTPException(400, "This ballot is closed.")
@@ -308,7 +442,7 @@ def simulate_votes(request: Request, ballot_id: int, choice: str = Form("yes"), 
         seed_ids = set(s.scalars(select(DemoAccount.user_id).where(DemoAccount.persona == "seed")).all())
         voted = set(s.scalars(select(Vote.membership_id).where(Vote.ballot_id == b.id)).all())
         for m in s.scalars(select(Membership).where(Membership.association_id == b.association_id)).all():
-            if m.user_id in seed_ids and m.id not in voted and b.status == "open":
+            if m.user_id in seed_ids and m.id not in voted and b.status == "open" and m.status == "founding":
                 s.add(Vote(ballot_id=b.id, membership_id=m.id, choice="yes" if choice == "yes" else "no"))
                 s.flush()
                 settle_ballot(s, b)

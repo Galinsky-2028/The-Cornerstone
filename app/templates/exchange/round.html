@@ -5,7 +5,7 @@
 <h1>{{ r.name }} <span class="status {{ r.status }}">{{ r.status }}</span></h1>
 <section class="card"><dl class="kv">
   <dt>Rankings close</dt><dd>{{ r.rankings_close.strftime('%d %B %Y') }}</dd>
-  <dt>Public random drawing</dt><dd><code class="wrap">{{ r.random_seed }}</code><br><span class="small muted">Fixed when the round opened. An association's draw number is the SHA-256 hash of this value, a colon, and the association's number; lower draws go first when priority dates are equal.</span></dd>
+  <dt>Public random drawing</dt><dd><code class="wrap">{{ r.random_seed }}</code><br><span class="small muted">Fixed when the round opened. An association's draw number is the SHA-256 hash of this value, a colon, and the association's number (a consortium uses minus its number); lower draws go first when priority dates are equal.</span></dd>
   <dt>Matching rule</dt><dd>Association-proposing deferred acceptance, as section 5(b) describes: each association proposes to its highest remaining choice; each offer keeps the proposer with priority (oldest unremedied injury, then the drawing) and releases the others to their next choice, until no proposal remains.</dd>
   <dt>Rankings received</dt><dd>{{ submitted }}</dd>
 </dl></section>
@@ -21,8 +21,8 @@
   {% else %}<tr><td colspan="4" class="muted">No matches.</td></tr>{% endfor %}</table>
 </section>
 <section class="card"><h2>Everything needed to reproduce the match</h2>
-  <table><tr><th>Association</th><th>Ranking, most preferred first</th><th>Priority date</th><th>Draw number</th></tr>
-  {% for rk in rankings %}<tr><td>{{ rk.a.ref }}</td><td>{{ rk.offers|join(' → ') }}</td><td>{{ rk.priority.strftime('%d %b %Y') if rk.priority }}</td><td><code>{{ rk.draw }}…</code></td></tr>{% endfor %}</table>
+  <table><tr><th>Association or consortium</th><th>Ranking, most preferred first</th><th>Priority date</th><th>Draw number</th></tr>
+  {% for rk in rankings %}<tr><td>{{ rk.ref }}{% if rk.members %} ({{ rk.members|join(' + ') }}){% endif %}{% if rk.problem %}<br><span class="small muted">not entered: {{ rk.problem }}</span>{% endif %}</td><td>{{ rk.offers|join(' → ') }}</td><td>{{ rk.priority.strftime('%d %b %Y') if rk.priority }}</td><td><code>{{ rk.draw }}…</code></td></tr>{% endfor %}</table>
   <h3>Step-by-step record</h3>
   <ol class="small">{% for line in (r.match_log or []) %}<li>{{ line }}</li>{% endfor %}</ol>
 </section>

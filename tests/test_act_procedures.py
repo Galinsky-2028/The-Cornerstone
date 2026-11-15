@@ -14,8 +14,10 @@ from test_cornerstone import post, visitor
 @pytest.fixture(autouse=True)
 def fresh_world():
     import app.seed
+    from app.views.preview import preview_limiter
 
     app.seed._warm = False
+    preview_limiter._events.clear()  # these tests start many preview accounts
     yield
 
 
