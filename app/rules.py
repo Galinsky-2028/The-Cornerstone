@@ -364,3 +364,37 @@ def preopening_outcome(failures_so_far: int, choice: str) -> str:
 def cooling_off_ends(decided_on: date) -> date:
     """s.9(b): two years after personally and substantially deciding a compact matter."""
     return _add_years(decided_on, COOLING_OFF_YEARS)
+
+
+# --------------------------------------------------------------------------
+# Sections 4(a), 6(e) and 8(c)
+# --------------------------------------------------------------------------
+EMERGENCY_HEARING_DAYS = 10       # "followed by a prompt hearing"
+
+
+def roll_ceiling(large_body_approved: bool) -> int | None:
+    """s.4(a): ordinarily no more than 2,500 founding units; a larger body only with approval."""
+    return None if large_body_approved else MAX_FOUNDING_UNITS
+
+
+def revocation_problem(*, ground: str, hearing_record: str, cure_deadline: date | None, today: date,
+                       opened_by: int | None, decider: int, findings: str) -> str | None:
+    """Why a compact may not be revoked now, or None."""
+    from .models import REVOCATION_GROUNDS
+
+    if ground not in REVOCATION_GROUNDS:
+        return "Revocation is limited to material safety violations, fraud, corruption, loss of beneficiary control, or repeated failure to provide required service."
+    if len((hearing_record or "").strip()) < 20:
+        return "A hearing must be held and recorded first."
+    if cure_deadline is not None and today <= cure_deadline:
+        return f"The feasible cure period runs until {cure_deadline:%d %B %Y}."
+    if opened_by is not None and opened_by == decider:
+        return "An independent adjudicator, not the official who brought the proceeding, decides a contested violation."
+    if len((findings or "").strip()) < 40:
+        return "Written findings are required."
+    return None
+
+
+def fund_released(total_remitted: int, max_obligation: int) -> bool:
+    """s.8(c): the obligation is released permanently once disbursed principal and its fixed return are paid."""
+    return max_obligation > 0 and total_remitted >= max_obligation

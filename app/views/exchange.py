@@ -120,7 +120,7 @@ def compact_public(request: Request, ref: str):
     from ..rules import compact_dates
 
     with SessionLocal() as s:
-        c = s.scalar(visible(select(Compact), Compact).where(Compact.ref == ref, Compact.status == "executed"))
+        c = s.scalar(visible(select(Compact), Compact).where(Compact.ref == ref, Compact.status.in_(["executed", "suspended", "revoked"])))
         if c is None:
             raise HTTPException(404)
         decisions = s.scalars(select(SupervisorDecision).where(SupervisorDecision.compact_id == c.id)
@@ -146,6 +146,10 @@ def compact_public(request: Request, ref: str):
             u = s.get(User, uid)
             people.append({"name": (u.name or "An official") if u else "An official", "what": what, "on": on,
                            "until": cooling_off_ends(on)})
+        from ..models import REVOCATION_GROUNDS, CompactProceeding
+
+        proceedings = s.scalars(select(CompactProceeding).where(CompactProceeding.compact_id == c.id).order_by(CompactProceeding.id.desc())).all()
         return page(request, "exchange/compact.html", {"c": c, "decisions": decisions, "reports": reports, "deciders": people,
+                                                         "proceedings": proceedings, "grounds": REVOCATION_GROUNDS,
                                                          "repaid": repaid, "dates": dates,
                                                          "units": founding_units(s, c.association_id)})

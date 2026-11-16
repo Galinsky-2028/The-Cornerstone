@@ -2,7 +2,7 @@
 {% block title %}Compact {{ c.ref }} · Exchange{% endblock %}
 {% block page %}
 <p class="small"><a href="/exchange#compacts">← Compacts</a></p>
-<h1>Compact {{ c.ref }}</h1>
+<h1>Compact {{ c.ref }}{% if c.status != 'executed' %} <span class="status {{ c.status }}">{{ c.status }}</span>{% endif %}</h1>
 <p class="muted">{{ c.association.name }} ({{ units }} founding units) · {{ c.offer.trade }} · {{ c.offer.district }}, {{ c.offer.state_name }}</p>
 <section class="card"><dl class="kv">
   <dt>Executed</dt><dd>{{ c.executed_on.strftime('%d %B %Y') if c.executed_on }}</dd>
@@ -14,6 +14,10 @@
   <dt>Founding Fund terms</dt><dd>{{ "%.2f"|format(c.fund_rate_bp / 100) }}% of quarterly operating receipts until the amount advanced plus a fixed {{ "%.2f"|format(c.fund_return_bp / 100) }}% return is repaid; maximum obligation ${{ "{:,}".format(c.fund_max_obligation) }}. Repaid so far: ${{ "{:,}".format(repaid) }}.</dd>
   <dt>State surplus share</dt><dd>{{ c.surplus_rate_pct }}% of positive shareable surplus, to the State land-acquisition account</dd>
 </dl></section>
+{% if c.fund_released_on %}<p class="notice">Founding Fund obligation repaid and released permanently on {{ c.fund_released_on.strftime('%d %B %Y') }}.</p>{% endif %}
+{% if proceedings %}<section class="card"><h2>Enforcement proceedings</h2>
+  {% for p in proceedings %}<p><strong>{{ 'Emergency suspension' if p.kind == 'emergency' else 'Revocation' }}</strong> · {{ grounds.get(p.ground) }} · <span class="status {{ p.outcome }}">{{ p.outcome }}</span> · opened {{ p.opened_on.strftime('%d %b %Y') }}<br>{{ p.notice }}{% if p.findings %}<br><span class="small"><strong>Findings:</strong> {{ p.findings }}</span>{% endif %}</p>{% endfor %}
+</section>{% endif %}
 <section class="card"><h2>Supervision decisions</h2>
   {% for d in decisions %}<p><strong>{{ d.kind }}</strong> · <span class="status {{ d.decision }}">{{ d.decision }}</span> · {{ d.created_on.strftime('%d %b %Y') }}<br>{{ d.request }}{% if d.reasons %}<br><span class="small"><strong>Supervisor:</strong> {{ d.reasons }}</span>{% endif %}</p>{% else %}<p class="muted">None yet.</p>{% endfor %}
 </section>

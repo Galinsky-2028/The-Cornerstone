@@ -36,10 +36,19 @@
   {% for f in advances %}<tr><td>{{ f.association.ref }}</td><td>{{ fund_categories.get(f.category, f.category) }}<br><span class="small muted">{{ f.description }}</span></td><td>{{ f.provider }}</td><td class="right">{{ f.amount|money }}</td>
     <td><span class="status {{ f.status }}">{{ f.status }}</span></td>
     <td><form method="post" action="/labor/fund/{{ f.id }}" class="row">{{ csrf_field(request) }}
-      {% if f.status == 'requested' %}<button class="btn small primary" name="action" value="approve" type="submit">Approve</button><button class="btn small danger" name="action" value="reject" type="submit">Reject</button>
+      {% if f.status == 'requested' %}<input name="reasons" aria-label="Reasons (required after a second preopening failure)" placeholder="Reasons"><button class="btn small primary" name="action" value="approve" type="submit">Approve</button><button class="btn small danger" name="action" value="reject" type="submit">Reject</button>
       {% else %}<button class="btn small primary" name="action" value="disburse" type="submit">Pay the provider</button>{% endif %}</form></td></tr>
   {% else %}<tr><td colspan="6" class="muted">Nothing waiting.</td></tr>{% endfor %}</table>
 </section>
+
+{% if large_bodies %}
+<section class="card" id="large-bodies"><h2>Larger founding bodies (section 4(a))</h2>
+  {% for a in large_bodies %}<form method="post" action="/labor/associations/{{ a.ref }}/large-body" class="ballot">{{ csrf_field(request) }}
+    <p><strong>{{ a.ref }}</strong> {{ a.name }}: a majority of all founders approved more than 2,500 units.</p>
+    <label>Findings that accessible meetings, voting, records and member deliberation remain practical<textarea name="findings" rows="2" required></textarea></label>
+    <button class="btn" type="submit">Approve the larger body</button></form>{% endfor %}
+</section>
+{% endif %}
 
 <section class="card" id="restorations"><h2>Restoration</h2>
   {% for r in restorations %}<p><a href="/labor/restorations/{{ r.association.ref }}">{{ r.association.ref }} · {{ r.association.name }}</a> <span class="status {{ r.status }}">{{ r.status }}</span></p>{% else %}<p class="muted">No association has an executed compact yet.</p>{% endfor %}
