@@ -19,7 +19,8 @@ from ..models import (
 )
 from ..program import association_priority, founding_units, is_preview, next_ref, roll_size, visible
 from ..rules import (
-    ENROLLMENT_DAYS, MAX_FOUNDING_UNITS, MIN_FOUNDING_UNITS, ballot_outcome, days_from, fund_remittance, state_share,
+    ENROLLMENT_DAYS, MAX_FOUNDING_UNITS, MIN_FOUNDING_UNITS, ballot_outcome, days_from, fund_released, fund_remittance,
+    roll_ceiling, state_share,
     votes_needed,
 )
 from .common import clean, go, page, preview_only, to_int
@@ -184,8 +185,10 @@ def association_join(request: Request, ref: str, claim_ref: str = Form(...), use
             raise HTTPException(400, "Joining requires your own claim, certified or still under review.")
         if s.scalar(select(Membership).where(Membership.claim_id == c.id)):
             raise HTTPException(400, "That claim is already on a founding roll.")
-        if roll_size(s, a.id) >= MAX_FOUNDING_UNITS:
-            raise HTTPException(400, f"The founding roll is full at {MAX_FOUNDING_UNITS:,} units.")
+        ceiling = roll_ceiling(a.large_body_approved_on is not None)
+        if ceiling is not None and roll_size(s, a.id) >= ceiling:
+            raise HTTPException(400, f"The founding roll is full at {ceiling:,} units. A larger body needs a majority of all "
+                                     "founders and Labor's findings (section 4(a)).")
         status = "founding" if c.status == "certified" else "cohort"
         s.add(Membership(association_id=a.id, claim_id=c.id, user_id=user.id, status=status))
         audit(s, "association.join", user.id, target=ref, claim=c.ref, status=status)
@@ -507,7 +510,7 @@ def quarterly_report(request: Request, ref: str, quarter: str = Form(...), opera
         a = _assoc(s, ref)
         _board(s, a, user)
         k = _compact(s, a)
-        if k is None or k.status != "executed":
+        if k is None or k.status not in ("executed", "suspended"):
             raise HTTPException(400, "Reports begin once a compact is executed.")
         if s.scalar(select(QuarterlyReport).where(QuarterlyReport.compact_id == k.id, QuarterlyReport.quarter == quarter.strip())):
             raise HTTPException(400, "That quarter has already been reported.")
@@ -517,6 +520,9 @@ def quarterly_report(request: Request, ref: str, quarter: str = Form(...), opera
         share = state_share(surplus, k.surplus_rate_pct)
         s.add(QuarterlyReport(compact_id=k.id, quarter=quarter.strip(), operating_receipts=receipts, shareable_surplus=surplus,
                               fund_remittance=rem, state_share=share, submitted_by=user.id, is_demo=is_preview()))
+        if k.fund_released_on is None and fund_released(paid + rem, k.fund_max_obligation):
+            k.fund_released_on = date.today()  # s.8(c): released permanently; no renewal or State share revives it
+            audit(s, "compact.fund_released", user.id, target=k.ref)
         audit(s, "compact.report", user.id, target=k.ref, quarter=quarter, remittance=rem, state_share=share)
         s.commit()
     return go(f"/app/associations/{ref}#reports", f"Reported. Fund remittance ${rem:,}; State share ${share:,}.")
@@ -573,3 +579,45 @@ def submit_audit(request: Request, ref: str, year: str = Form(...), auditor: str
         s.commit()
     warn = "" if beneficiary_control else " The audit does not confirm beneficiary control; the Exchange shows that."
     return go(f"/app/associations/{ref}#audits", f"The {y} audit summary and disclosures are published on the Exchange.{warn}")
+
+
+@router.post("/app/associations/{ref}/large-body-ballot")
+def large_body_ballot(request: Request, ref: str, user: User = Depends(require_user)):
+    """s.4(a): the founders vote on whether the body may exceed 2,500 units; Labor then makes written findings."""
+    with SessionLocal() as s:
+        a = _assoc(s, ref)
+        _board(s, a, user)
+        if a.large_body_approved_on or s.scalar(select(Ballot.id).where(Ballot.association_id == a.id, Ballot.kind == "large_body",
+                                                                         Ballot.status.in_(["open", "passed"]))):
+            raise HTTPException(400, "This question is already decided or on the ballot.")
+        s.add(Ballot(association_id=a.id, kind="large_body", title="Allow more than 2,500 founding units",
+                     description="Labor may approve a larger body only with the approval of a majority of ALL founders and written "
+                                 "findings that accessible meetings, voting, records and deliberation remain practical.",
+                     closes_on=days_from(date.today(), 30), created_by=user.id, is_demo=is_preview()))
+        audit(s, "association.large_body_ballot", user.id, target=ref)
+        s.commit()
+    return go(f"/app/associations/{ref}#ballots", "The question is on the ballot.")
+
+
+@router.post("/app/associations/{ref}/appeals")
+def share_appeal(request: Request, ref: str, report_id: str = Form(...), claimed_surplus: str = Form(...), reasons: str = Form(...),
+                 user: User = Depends(require_user)):
+    """s.6(d): an appeal may correct inputs or classifications of the State share calculation, never the rate."""
+    from ..models import ShareAppeal
+
+    with SessionLocal() as s:
+        a = _assoc(s, ref)
+        _board(s, a, user)
+        r = s.get(QuarterlyReport, to_int(report_id))
+        k = _compact(s, a)
+        if r is None or k is None or r.compact_id != k.id:
+            raise HTTPException(404)
+        if len(reasons.strip()) < 20:
+            raise HTTPException(400, "Say which input or classification is wrong and why.")
+        if s.scalar(select(ShareAppeal.id).where(ShareAppeal.report_id == r.id, ShareAppeal.status == "pending")):
+            raise HTTPException(400, "An appeal of this quarter is already pending.")
+        s.add(ShareAppeal(report_id=r.id, claimed_surplus=to_int(claimed_surplus), reasons=clean(reasons), filed_by=user.id,
+                          is_demo=is_preview()))
+        audit(s, "compact.share_appeal", user.id, target=k.ref, quarter=r.quarter)
+        s.commit()
+    return go(f"/app/associations/{ref}#reports", "Appeal filed with the supervisor. It can correct inputs, not the rate.")

@@ -1,5 +1,46 @@
 {% extends "layout.html" %}
-{% block title %}Supervision · The Cornerstone{% endblock %}
+{% block title %}Supervision · The Cornerstone
+<section class="card" id="proceedings"><h2>Enforcement proceedings (section 6(e))</h2>
+  <p class="small muted">Revocation is limited to material safety violations, fraud, corruption, loss of beneficiary voting control, or repeated failure to provide required service, and needs notice, a hearing, a feasible cure and written findings by an adjudicator other than the official who brought it. An emergency suspension must be narrowly tailored to imminent serious harm and followed by a prompt hearing.</p>
+  {% for p in proceedings %}
+  <div class="ballot"><h3>{{ compact_refs.get(p.compact_id) }} · {{ 'Emergency suspension' if p.kind == 'emergency' else 'Revocation' }} · {{ grounds.get(p.ground) }} <span class="status {{ p.outcome }}">{{ p.outcome }}</span></h3>
+    <p>{{ p.notice }}</p><p class="small muted">Opened {{ p.opened_on.strftime('%d %b %Y') }}{% if p.hearing_due %} · hearing due {{ p.hearing_due.strftime('%d %b %Y') }}{% endif %}{% if p.cure_deadline %} · cure by {{ p.cure_deadline.strftime('%d %b %Y') }}{% endif %}</p>
+    {% if p.hearing_record %}<p class="small"><strong>Hearing:</strong> {{ p.hearing_record }}</p>{% endif %}
+    {% if p.findings %}<p class="small"><strong>Findings:</strong> {{ p.findings }}</p>{% endif %}
+    {% if p.outcome == 'pending' %}
+    <form method="post" action="/supervisor/proceedings/{{ p.id }}/hearing">{{ csrf_field(request) }}
+      <label>Hearing record<textarea name="record" rows="2" required>{{ p.hearing_record }}</textarea></label>
+      <label>Feasible cure deadline (optional)<input type="date" name="cure_deadline"></label>
+      <button class="btn small" type="submit">Record the hearing</button></form>
+    <form method="post" action="/supervisor/proceedings/{{ p.id }}/decide">{{ csrf_field(request) }}
+      <label>Written findings{% if p.opened_by == user_id %} <span class="small">(you brought this proceeding: another adjudicator must decide a revocation, cure or dismissal)</span>{% endif %}<textarea name="findings" rows="2" required></textarea></label>
+      <button class="btn small danger" name="outcome" value="revoked" type="submit">Revoke</button>
+      <button class="btn small" name="outcome" value="cured" type="submit">Cured</button>
+      <button class="btn small" name="outcome" value="dismissed" type="submit">Dismiss</button>
+      {% if p.kind == 'emergency' %}<button class="btn small" name="outcome" value="lifted" type="submit">Lift the suspension</button>{% endif %}</form>
+    {% endif %}</div>
+  {% else %}<p class="muted">None.</p>{% endfor %}
+  {% for k in compacts if k.status in ['executed', 'suspended'] %}
+  <form method="post" action="/supervisor/compacts/{{ k.ref }}/proceedings" class="ballot">{{ csrf_field(request) }}
+    <h3>Open a proceeding on {{ k.ref }}</h3>
+    <div class="row"><label>Kind<select name="kind"><option value="revocation">Revocation</option><option value="emergency">Emergency suspension</option></select></label>
+      <label>Ground<select name="ground">{% for g, label in grounds.items() %}<option value="{{ g }}">{{ label }}</option>{% endfor %}</select></label></div>
+    <label>Notice: the alleged violation, the facts relied on, and for an emergency the imminent serious harm<textarea name="notice" rows="2" required></textarea></label>
+    <button class="btn small" type="submit">Issue notice</button></form>
+  {% endfor %}
+</section>
+
+<section class="card" id="appeals"><h2>State share calculation appeals (section 6(d))</h2>
+  {% for ap in appeals %}{% set r = reports[ap.report_id] %}
+  <div class="ballot"><p><strong>{{ compact_refs.get(r.compact_id) }} {{ r.quarter }}</strong> <span class="status {{ ap.status }}">{{ ap.status }}</span>: reported surplus {{ r.shareable_surplus|money }}, claimed {{ ap.claimed_surplus|money }}<br>{{ ap.reasons }}</p>
+    {% if ap.status == 'pending' %}<form method="post" action="/supervisor/appeals/{{ ap.id }}">{{ csrf_field(request) }}
+      <label>Reasons<textarea name="reasons" rows="2" required minlength="20"></textarea></label>
+      <button class="btn small primary" name="decision" value="corrected" type="submit">Correct the inputs</button>
+      <button class="btn small" name="decision" value="denied" type="submit">Deny</button></form>
+    {% else %}<p class="small"><strong>Decision:</strong> {{ ap.decision_reasons }}</p>{% endif %}</div>
+  {% else %}<p class="muted">None.</p>{% endfor %}
+</section>
+{% endblock %}
 {% block page %}
 <h1>Independent supervision{% if state %} · {{ state }}{% endif %}</h1>
 <p class="prose muted">The supervisor is independent of the association and of anyone active in the market. Material pricing, access, service, safety and exclusion decisions take effect only as you approve, modify or reject them, with reasons published on the compact's record.</p>
@@ -19,5 +60,46 @@
     {% else %}<p class="small"><strong>Reasons:</strong> {{ d.reasons }}</p>{% endif %}
   </div>
   {% else %}<p class="muted">No requests.</p>{% endfor %}
+</section>
+
+<section class="card" id="proceedings"><h2>Enforcement proceedings (section 6(e))</h2>
+  <p class="small muted">Revocation is limited to material safety violations, fraud, corruption, loss of beneficiary voting control, or repeated failure to provide required service, and needs notice, a hearing, a feasible cure and written findings by an adjudicator other than the official who brought it. An emergency suspension must be narrowly tailored to imminent serious harm and followed by a prompt hearing.</p>
+  {% for p in proceedings %}
+  <div class="ballot"><h3>{{ compact_refs.get(p.compact_id) }} · {{ 'Emergency suspension' if p.kind == 'emergency' else 'Revocation' }} · {{ grounds.get(p.ground) }} <span class="status {{ p.outcome }}">{{ p.outcome }}</span></h3>
+    <p>{{ p.notice }}</p><p class="small muted">Opened {{ p.opened_on.strftime('%d %b %Y') }}{% if p.hearing_due %} · hearing due {{ p.hearing_due.strftime('%d %b %Y') }}{% endif %}{% if p.cure_deadline %} · cure by {{ p.cure_deadline.strftime('%d %b %Y') }}{% endif %}</p>
+    {% if p.hearing_record %}<p class="small"><strong>Hearing:</strong> {{ p.hearing_record }}</p>{% endif %}
+    {% if p.findings %}<p class="small"><strong>Findings:</strong> {{ p.findings }}</p>{% endif %}
+    {% if p.outcome == 'pending' %}
+    <form method="post" action="/supervisor/proceedings/{{ p.id }}/hearing">{{ csrf_field(request) }}
+      <label>Hearing record<textarea name="record" rows="2" required>{{ p.hearing_record }}</textarea></label>
+      <label>Feasible cure deadline (optional)<input type="date" name="cure_deadline"></label>
+      <button class="btn small" type="submit">Record the hearing</button></form>
+    <form method="post" action="/supervisor/proceedings/{{ p.id }}/decide">{{ csrf_field(request) }}
+      <label>Written findings{% if p.opened_by == user_id %} <span class="small">(you brought this proceeding: another adjudicator must decide a revocation, cure or dismissal)</span>{% endif %}<textarea name="findings" rows="2" required></textarea></label>
+      <button class="btn small danger" name="outcome" value="revoked" type="submit">Revoke</button>
+      <button class="btn small" name="outcome" value="cured" type="submit">Cured</button>
+      <button class="btn small" name="outcome" value="dismissed" type="submit">Dismiss</button>
+      {% if p.kind == 'emergency' %}<button class="btn small" name="outcome" value="lifted" type="submit">Lift the suspension</button>{% endif %}</form>
+    {% endif %}</div>
+  {% else %}<p class="muted">None.</p>{% endfor %}
+  {% for k in compacts if k.status in ['executed', 'suspended'] %}
+  <form method="post" action="/supervisor/compacts/{{ k.ref }}/proceedings" class="ballot">{{ csrf_field(request) }}
+    <h3>Open a proceeding on {{ k.ref }}</h3>
+    <div class="row"><label>Kind<select name="kind"><option value="revocation">Revocation</option><option value="emergency">Emergency suspension</option></select></label>
+      <label>Ground<select name="ground">{% for g, label in grounds.items() %}<option value="{{ g }}">{{ label }}</option>{% endfor %}</select></label></div>
+    <label>Notice: the alleged violation, the facts relied on, and for an emergency the imminent serious harm<textarea name="notice" rows="2" required></textarea></label>
+    <button class="btn small" type="submit">Issue notice</button></form>
+  {% endfor %}
+</section>
+
+<section class="card" id="appeals"><h2>State share calculation appeals (section 6(d))</h2>
+  {% for ap in appeals %}{% set r = reports[ap.report_id] %}
+  <div class="ballot"><p><strong>{{ compact_refs.get(r.compact_id) }} {{ r.quarter }}</strong> <span class="status {{ ap.status }}">{{ ap.status }}</span>: reported surplus {{ r.shareable_surplus|money }}, claimed {{ ap.claimed_surplus|money }}<br>{{ ap.reasons }}</p>
+    {% if ap.status == 'pending' %}<form method="post" action="/supervisor/appeals/{{ ap.id }}">{{ csrf_field(request) }}
+      <label>Reasons<textarea name="reasons" rows="2" required minlength="20"></textarea></label>
+      <button class="btn small primary" name="decision" value="corrected" type="submit">Correct the inputs</button>
+      <button class="btn small" name="decision" value="denied" type="submit">Deny</button></form>
+    {% else %}<p class="small"><strong>Decision:</strong> {{ ap.decision_reasons }}</p>{% endif %}</div>
+  {% else %}<p class="muted">None.</p>{% endfor %}
 </section>
 {% endblock %}

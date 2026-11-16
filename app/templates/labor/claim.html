@@ -1,5 +1,23 @@
 {% extends "layout.html" %}
-{% block title %}Examine {{ c.ref }} · Department of Labor{% endblock %}
+{% block title %}Examine {{ c.ref }} · Department of Labor
+<section class="card" id="rescission"><h2>Rescission of fraudulently obtained eligibility</h2>
+  <p class="small muted">Section 4(f): only Labor may rescind, and only after notice, a hearing and written findings. No charter amendment or expulsion can take a founding unit.</p>
+  {% for r in rescissions %}
+  <div class="ballot"><p><span class="status {{ r.outcome }}">{{ r.outcome }}</span> · notice {{ r.noticed_on.strftime('%d %b %Y') }}<br>{{ r.notice }}</p>
+    {% if r.hearing_record %}<p class="small"><strong>Hearing:</strong> {{ r.hearing_record }}</p>{% endif %}
+    {% if r.findings %}<p class="small"><strong>Findings:</strong> {{ r.findings }}</p>{% endif %}
+    {% if r.outcome == 'pending' %}
+      <form method="post" action="/labor/rescissions/{{ r.id }}/hearing">{{ csrf_field(request) }}<label>Hearing record<textarea name="record" rows="2" required>{{ r.hearing_record }}</textarea></label><button class="btn small" type="submit">Record the hearing</button></form>
+      <form method="post" action="/labor/rescissions/{{ r.id }}/decide">{{ csrf_field(request) }}<label>Findings<textarea name="findings" rows="2" required></textarea></label>
+        <button class="btn small danger" name="outcome" value="rescinded" type="submit">Rescind eligibility</button>
+        <button class="btn small" name="outcome" value="dismissed" type="submit">Dismiss</button></form>
+    {% endif %}</div>
+  {% endfor %}
+  {% if c.status in ['certified', 'remedied', 'reopened'] and not (rescissions|selectattr('outcome', 'equalto', 'pending')|list) %}
+  <form method="post" action="/labor/claims/{{ c.ref }}/rescission">{{ csrf_field(request) }}<label>Notice of the alleged fraud and the evidence relied on<textarea name="notice" rows="2" required></textarea></label><button class="btn small" type="submit">Issue notice</button></form>
+  {% endif %}
+</section>
+{% endblock %}
 {% block page %}
 <p class="small"><a href="/labor#claims">← Labor desk</a></p>
 <h1>Claim {{ c.ref }} <span class="status {{ c.status }}">{{ c.status|label }}</span></h1>

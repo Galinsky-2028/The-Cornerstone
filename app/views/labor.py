@@ -13,7 +13,7 @@ from foundation.models import User
 
 from ..models import (
     FUND_CATEGORIES, RESTORATION_CHECKS, SUBPOENA_STATUSES, Association, Claim, Compact, Event, FundAdvance, Membership,
-    Restoration, Subpoena,
+    Ballot, ClaimRescission, Restoration, Subpoena,
 )
 from ..program import founding_units, is_preview, require_not_recused, require_program_role, visible
 from ..rules import (
@@ -47,7 +47,10 @@ def desk(request: Request, user: User = Depends(labor)):
         advances = s.scalars(visible(select(FundAdvance), FundAdvance).where(FundAdvance.status.in_(["requested", "approved"]))
                              .order_by(FundAdvance.id)).all()
         restorations = s.scalars(visible(select(Restoration), Restoration).order_by(Restoration.id)).all()
-        return page(request, "labor/desk.html", {
+        large_bodies = s.scalars(visible(select(Association), Association).where(
+            Association.large_body_approved_on.is_(None),
+            Association.id.in_(select(Ballot.association_id).where(Ballot.kind == "large_body", Ballot.status == "passed")))).all()
+        return page(request, "labor/desk.html", {"large_bodies": large_bodies,
             "events": events, "claims": claims, "hearings": hearings, "chartering": chartering,
             "charter_units": {a.id: founding_units(s, a.id) for a in chartering}, "advances": advances,
             "restorations": restorations, "fund_categories": FUND_CATEGORIES, "today": date.today()})
@@ -194,7 +197,8 @@ def _promote_cohort(s, c: Claim) -> None:
 def claim_review(request: Request, ref: str, user: User = Depends(labor)):
     with SessionLocal() as s:
         c = _claim(s, ref)
-        return page(request, "labor/claim.html", {"c": c, "e": c.event, "result": _assess(c, c.event), "docs": list(c.documents),
+        rescissions = s.scalars(select(ClaimRescission).where(ClaimRescission.claim_id == c.id).order_by(ClaimRescission.id)).all()
+        return page(request, "labor/claim.html", {"rescissions": rescissions, "c": c, "e": c.event, "result": _assess(c, c.event), "docs": list(c.documents),
                                                    "doc_kinds": DOC_KINDS, "work_types": WORK_TYPES, "separations": SEPARATIONS})
 
 
@@ -442,3 +446,89 @@ def _compact_associations(s, k: Compact) -> list[int]:
     if k.match and k.match.consortium_id:
         return list(s.get(Consortium, k.match.consortium_id).association_ids)
     return [k.association_id]
+
+
+# --------------------------------------------------------------------------
+# Section 4(f): rescission of fraudulently obtained eligibility
+# --------------------------------------------------------------------------
+@router.post("/claims/{ref}/rescission")
+def rescission_notice(request: Request, ref: str, notice: str = Form(...), user: User = Depends(labor)):
+    if len(notice.strip()) < 40:
+        raise HTTPException(400, "The notice must state the alleged fraud and the evidence relied on.")
+    with SessionLocal() as s:
+        c = _claim(s, ref)
+        if c.status not in ("certified", "remedied", "reopened"):
+            raise HTTPException(400, "Only a certified claim can be the subject of rescission.")
+        if s.scalar(select(ClaimRescission).where(ClaimRescission.claim_id == c.id, ClaimRescission.outcome == "pending")):
+            raise HTTPException(400, "A rescission proceeding is already open.")
+        s.add(ClaimRescission(claim_id=c.id, notice=clean(notice), noticed_by=user.id, is_demo=c.is_demo))
+        audit(s, "claim.rescission_notice", user.id, target=ref)
+        s.commit()
+    return go(f"/labor/claims/{ref}#rescission", "Notice issued. The worker is entitled to a hearing before any finding.")
+
+
+def _rescission(s, rid: int) -> ClaimRescission:
+    r = s.get(ClaimRescission, rid)
+    if r is None or r.is_demo != is_preview() or r.outcome != "pending":
+        raise HTTPException(404)
+    return r
+
+
+@router.post("/rescissions/{rid}/hearing")
+def rescission_hearing(request: Request, rid: int, record: str = Form(...), user: User = Depends(labor)):
+    if len(record.strip()) < 20:
+        raise HTTPException(400, "Record what was heard.")
+    with SessionLocal() as s:
+        r = _rescission(s, rid)
+        r.hearing_record = clean(record)
+        ref = s.get(Claim, r.claim_id).ref
+        audit(s, "claim.rescission_hearing", user.id, target=ref)
+        s.commit()
+    return go(f"/labor/claims/{ref}#rescission", "Hearing recorded.")
+
+
+@router.post("/rescissions/{rid}/decide")
+def rescission_decide(request: Request, rid: int, outcome: str = Form(...), findings: str = Form(...), user: User = Depends(labor)):
+    if outcome not in ("rescinded", "dismissed"):
+        raise HTTPException(400)
+    with SessionLocal() as s:
+        r = _rescission(s, rid)
+        c = s.get(Claim, r.claim_id)
+        if len(r.hearing_record.strip()) < 20:
+            raise HTTPException(400, "Eligibility may be rescinded only after a hearing.")
+        if len(findings.strip()) < 40:
+            raise HTTPException(400, "Written findings are required.")
+        if c.user_id == user.id:
+            raise HTTPException(403, "An examiner may not decide their own claim.")
+        r.outcome, r.findings, r.decided_by, r.decided_on = outcome, clean(findings), user.id, date.today()
+        if outcome == "rescinded":
+            c.status = "rescinded"
+            m = s.scalar(select(Membership).where(Membership.claim_id == c.id))
+            if m is not None:
+                s.delete(m)  # no charter amendment or expulsion confiscates a unit; only this finding removes it
+        audit(s, f"claim.rescission_{outcome}", user.id, target=c.ref)
+        s.commit()
+        ref = c.ref
+    return go(f"/labor/claims/{ref}#rescission", "Eligibility rescinded on written findings." if outcome == "rescinded"
+              else "Proceeding dismissed. The claim stands.")
+
+
+# --------------------------------------------------------------------------
+# Section 4(a): a body larger than 2,500 units
+# --------------------------------------------------------------------------
+@router.post("/associations/{ref}/large-body")
+def large_body(request: Request, ref: str, findings: str = Form(...), user: User = Depends(labor)):
+    with SessionLocal() as s:
+        a = s.scalar(visible(select(Association), Association).where(Association.ref == ref))
+        if a is None:
+            raise HTTPException(404)
+        require_not_recused(s, user, association_id=a.id)
+        passed = s.scalar(select(Ballot.id).where(Ballot.association_id == a.id, Ballot.kind == "large_body", Ballot.status == "passed"))
+        if passed is None:
+            raise HTTPException(400, "A larger body first needs approval by a majority of all founders.")
+        if len(findings.strip()) < 40:
+            raise HTTPException(400, "Write findings that accessible meetings, voting, records and member deliberation remain practical.")
+        a.large_body_approved_on, a.large_body_findings = date.today(), clean(findings)
+        audit(s, "association.large_body", user.id, target=ref)
+        s.commit()
+    return go(f"/app/associations/{ref}", "Approved: the founding roll may exceed 2,500 units.")

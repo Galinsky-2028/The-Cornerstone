@@ -160,7 +160,7 @@ class EventComment(Base):
 # --------------------------------------------------------------------------
 # Section 3: Individual claims
 # --------------------------------------------------------------------------
-CLAIM_STATUSES = ("filed", "certified", "denied", "hearing_requested", "remedied", "reopened")
+CLAIM_STATUSES = ("filed", "certified", "denied", "hearing_requested", "remedied", "reopened", "rescinded")
 
 
 class Claim(Base):
@@ -201,6 +201,23 @@ class Claim(Base):
     documents: Mapped[list["ClaimDocument"]] = relationship(cascade="all, delete-orphan")
 
 
+class ClaimRescission(Base):
+    """s.4(f): fraudulently obtained eligibility may be rescinded only by Labor after notice, a hearing and findings."""
+
+    __tablename__ = "cs_claim_rescissions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    claim_id: Mapped[int] = mapped_column(ForeignKey("cs_claims.id", ondelete="CASCADE"), index=True)
+    notice: Mapped[str] = mapped_column(Text)
+    noticed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    noticed_on: Mapped[date] = mapped_column(Date, default=date.today)
+    hearing_record: Mapped[str] = mapped_column(Text, default="")
+    findings: Mapped[str] = mapped_column(Text, default="")
+    outcome: Mapped[str] = mapped_column(String(20), default="pending")  # pending | rescinded | dismissed
+    decided_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    decided_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_demo: Mapped[bool] = demo_col()
+
+
 class ClaimDocument(Base):
     __tablename__ = "cs_claim_documents"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -230,6 +247,9 @@ class Association(Base):
     enrollment_closes: Mapped[date] = mapped_column(Date)
     chartered_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # s.4(a): a body larger than 2,500 units needs a majority of all founders and Labor's written findings
+    large_body_approved_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    large_body_findings: Mapped[str] = mapped_column(Text, default="", server_default="")
     is_demo: Mapped[bool] = demo_col()
 
     members: Mapped[list["Membership"]] = relationship(back_populates="association", cascade="all, delete-orphan")
@@ -466,11 +486,62 @@ class Compact(Base):
     projected_annual_receipts: Mapped[int] = mapped_column(Integer, default=0)  # from the feasibility review
     ballot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     executed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    fund_released_on: Mapped[date | None] = mapped_column(Date, nullable=True)  # s.8(c)
     is_demo: Mapped[bool] = demo_col()
 
     offer: Mapped[Offer] = relationship()
     association: Mapped[Association] = relationship()
     match: Mapped[Match] = relationship()
+
+
+REVOCATION_GROUNDS = {
+    "material_safety": "Material safety violation",
+    "fraud": "Fraud",
+    "corruption": "Corruption",
+    "loss_of_control": "Loss of beneficiary voting control",
+    "service_failure": "Repeated failure to provide required service",
+}
+
+
+class CompactProceeding(Base):
+    """s.6(e): revocation only on the listed grounds, after notice, a hearing, a feasible cure and written findings by an
+    independent adjudicator; emergency suspension narrowly tailored to imminent serious harm, followed by a prompt
+    hearing."""
+
+    __tablename__ = "cs_compact_proceedings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    compact_id: Mapped[int] = mapped_column(ForeignKey("cs_compacts.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # revocation | emergency
+    ground: Mapped[str] = mapped_column(String(30))
+    notice: Mapped[str] = mapped_column(Text)
+    opened_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    opened_on: Mapped[date] = mapped_column(Date, default=date.today)
+    hearing_due: Mapped[date | None] = mapped_column(Date, nullable=True)
+    hearing_record: Mapped[str] = mapped_column(Text, default="")
+    cure_deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    findings: Mapped[str] = mapped_column(Text, default="")
+    outcome: Mapped[str] = mapped_column(String(20), default="pending")  # pending | revoked | cured | dismissed | lifted
+    decided_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    decided_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_demo: Mapped[bool] = demo_col()
+
+    compact: Mapped[Compact] = relationship()
+
+
+class ShareAppeal(Base):
+    """s.6(d): verification and a calculation appeal may correct inputs or classifications, never the rate."""
+
+    __tablename__ = "cs_share_appeals"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("cs_quarterly_reports.id", ondelete="CASCADE"), index=True)
+    claimed_surplus: Mapped[int] = mapped_column(Integer)
+    reasons: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | corrected | denied
+    decision_reasons: Mapped[str] = mapped_column(Text, default="")
+    filed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    decided_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    filed_on: Mapped[date] = mapped_column(Date, default=date.today)
+    is_demo: Mapped[bool] = demo_col()
 
 
 class SupervisorDecision(Base):

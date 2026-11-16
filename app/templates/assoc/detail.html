@@ -94,6 +94,14 @@
 <section class="card" id="reports"><h2>Quarterly reports</h2>
   <table><tr><th>Quarter</th><th class="right">Receipts</th><th class="right">Surplus</th><th class="right">To the Fund</th><th class="right">To the State</th></tr>
   {% for r in reports %}<tr><td>{{ r.quarter }}</td><td class="right">{{ r.operating_receipts|money }}</td><td class="right">{{ r.shareable_surplus|money }}</td><td class="right">{{ r.fund_remittance|money }}</td><td class="right">{{ r.state_share|money }}</td></tr>{% else %}<tr><td colspan="5" class="muted">None yet.</td></tr>{% endfor %}</table>
+  {% if compact and compact.fund_released_on %}<p class="notice">The Founding Fund obligation was repaid and released permanently on {{ compact.fund_released_on.strftime('%d %B %Y') }} (section 8(c)).</p>{% endif %}
+  {% if board and reports %}<details><summary>Appeal a State share calculation (section 6(d))</summary>
+  <form method="post" class="ballot" action="/app/associations/{{ a.ref }}/appeals">{{ csrf_field(request) }}
+    <p class="small muted">An appeal corrects inputs or classifications; it cannot change the fixed rate.</p>
+    <label>Quarter<select name="report_id">{% for r in reports %}<option value="{{ r.id }}">{{ r.quarter }}</option>{% endfor %}</select></label>
+    <label>Correct shareable surplus ($)<input name="claimed_surplus" inputmode="numeric" required></label>
+    <label>Which input or classification is wrong, and why<textarea name="reasons" rows="2" required></textarea></label>
+    <button class="btn small" type="submit">File the appeal</button></form></details>{% endif %}
   {% if board %}<form method="post" action="/app/associations/{{ a.ref }}/reports" class="row">{{ csrf_field(request) }}
     <label>Quarter<input name="quarter" placeholder="2029-Q3" required></label>
     <label>Operating receipts ($)<input name="operating_receipts" inputmode="numeric" required></label>
@@ -152,6 +160,8 @@
 
 <section class="card"><h2>Founding roll</h2>
   <p class="small muted">Published without names once the roll closes. Members see each other's occupation and event.</p>
+  {% if a.large_body_approved_on %}<p class="small">Labor approved a body larger than 2,500 units on {{ a.large_body_approved_on.strftime('%d %b %Y') }}: {{ a.large_body_findings }}</p>
+  {% elif board and a.status == 'enrolling' %}<form method="post" action="/app/associations/{{ a.ref }}/large-body-ballot">{{ csrf_field(request) }}<button class="btn small" type="submit">Ask the founders to allow more than 2,500 units</button></form>{% endif %}
   {% if cohort %}<p class="small">{{ cohort|length }} cohort applicant{{ 's' if cohort|length != 1 }} whose claims are still under review hold no unit or vote yet. Section 4(a): the roll cannot close until each is decided; a certified claim then becomes a founding unit and a denied one leaves the roll.</p>{% endif %}
   <table><tr><th>Unit</th><th>Event</th><th>Occupation</th><th>Board</th></tr>
   {% for m in members %}<tr><td>{% if m.status == 'cohort' %}cohort{% else %}{{ loop.index }}{% endif %}{% if member and m.id == member.id %} (you){% endif %}</td><td>{{ m.claim.event.ref }}</td><td>{{ m.claim.occupation }}</td><td>{{ 'Board' if m.on_board }}</td></tr>{% endfor %}</table>
