@@ -19,7 +19,7 @@ from foundation import blobstore
 from foundation.models import User, WebSession
 
 from .models import (
-    AuditReport, Association, Ballot, Claim, ClaimDocument, ClaimRescission, Compact, CompactProceeding, ConflictDisclosure, ShareAppeal, Consortium, DemoAccount, Event, EventComment, FederalAuthorization, FundAdvance,
+    AuditReport, Association, Ballot, Claim, ClaimDocument, ClaimRescission, Compact, CompactProceeding, ConflictDisclosure, EventAmendment, ShareAppeal, Consortium, DemoAccount, Event, EventComment, FederalAuthorization, FundAdvance,
     Interest, Match, Membership,
     Offer, OfferObjection, QuarterlyReport, Ranking, Restoration, RoleGrant, Round, Subpoena, SupervisorDecision, Vote,
 )
@@ -52,7 +52,7 @@ PERSONAS = {
 }
 
 DEMO_TABLES = [ShareAppeal, CompactProceeding, Vote, Ballot, ClaimRescission, QuarterlyReport, SupervisorDecision, Restoration, FundAdvance, Compact, Match, Ranking,
-               AuditReport, ConflictDisclosure, FederalAuthorization, OfferObjection, Offer, Consortium, Round, Membership, Association, Claim, EventComment, Subpoena,
+               AuditReport, ConflictDisclosure, FederalAuthorization, OfferObjection, Offer, Consortium, Round, Membership, Association, Claim, EventComment, EventAmendment, Subpoena,
                Event, Interest]
 
 

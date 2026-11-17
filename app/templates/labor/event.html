@@ -44,6 +44,31 @@
 {% endif %}
 {% endif %}
 
+{% set scope_labels = {'occupations': 'Covered occupations', 'worksites': 'Worksites or enterprises', 'geography': 'Geography', 'causal_mechanism': 'Causal mechanism', 'acceptable_proof': 'Acceptable individual proof', 'causal_start': 'Causal period begins', 'causal_end': 'Causal period ends', 'first_separation': 'First proven separation'} %}
+{% if e.status == 'certified' %}
+<section class="card" id="amendments"><h2>Amend the scope on new evidence (section 2(e))</h2>
+  <p class="small muted">The same notice and findings procedure as certification: the proposal is public, anyone may submit evidence and responses for at least 60 days, and the decision states written findings.</p>
+  {% for a in amendments %}
+  <div class="ballot"><p><span class="status {{ a.status }}">{{ a.status|label }}</span> · proposed {{ a.proposed_on.strftime('%d %b %Y') }} · evidence until {{ a.comment_ends.strftime('%d %b %Y') }}</p><p>{{ a.new_evidence }}</p>
+    {% if a.findings %}<p class="small"><strong>Findings:</strong> {{ a.findings }}</p>{% endif %}
+    {% if a.status == 'comment_period' %}
+      {% if today < a.comment_ends and is_preview() %}<form method="post" action="/labor/amendments/{{ a.id }}/end-evidence" class="preview-only">{{ csrf_field(request) }}<button class="btn small" type="submit">Preview: end the evidence period now</button></form>{% endif %}
+      <form method="post" action="/labor/amendments/{{ a.id }}/decide">{{ csrf_field(request) }}
+        <label>Written findings<textarea name="findings" rows="3" required></textarea></label>
+        <button class="btn small primary" name="decision" value="adopt" type="submit">Adopt the amendment</button>
+        <button class="btn small" name="decision" value="reject" type="submit">Reject</button></form>
+    {% endif %}</div>
+  {% endfor %}
+  {% if not (amendments|selectattr('status', 'equalto', 'comment_period')|list) %}
+  <form method="post" action="/labor/events/{{ e.ref }}/amendments" class="ballot">{{ csrf_field(request) }}
+    <label>New evidence<textarea name="new_evidence" rows="3" required></textarea></label>
+    {% for f in ['occupations', 'worksites', 'geography', 'causal_mechanism', 'acceptable_proof'] %}<label>{{ scope_labels[f] }}<textarea name="{{ f }}" rows="2">{{ e[f] }}</textarea></label>{% endfor %}
+    <div class="row">{% for f in ['causal_start', 'causal_end', 'first_separation'] %}<label>{{ scope_labels[f] }}<input type="date" name="{{ f }}" value="{{ e[f].isoformat() if e[f] else '' }}"></label>{% endfor %}</div>
+    <button class="btn" type="submit">Publish the proposed amendment</button></form>
+  {% endif %}
+</section>
+{% endif %}
+
 {% if e.status == 'comment_period' %}
 <section class="card"><p>The petition can be decided after the evidence period closes on {{ e.comment_ends.strftime('%d %B %Y') }}.</p>
   {% if is_preview() %}<form method="post" action="/labor/events/{{ e.ref }}/end-evidence" class="preview-only">{{ csrf_field(request) }}<button class="btn" type="submit">Preview: end the evidence period now</button></form>{% endif %}

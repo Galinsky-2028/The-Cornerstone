@@ -3,7 +3,9 @@
 {% block page %}
 <p class="small"><a href="/exchange/events/{{ e.ref }}">← {{ e.ref }} · {{ e.title }}</a></p>
 <h1>Submit evidence or a response</h1>
-<p class="prose">Everything you submit is published on the event's public record. The evidence period ends {{ e.comment_ends.strftime('%d %B %Y') }}.</p>
+{% if e.status == 'comment_period' %}<p class="prose">Everything you submit is published on the event's public record. The evidence period ends {{ e.comment_ends.strftime('%d %B %Y') }}.</p>
+{% elif amendment %}<p class="prose">Labor has proposed amending this event's certified scope on new evidence. Everything you submit is published on the event's public record. Evidence and responses on the amendment are accepted until {{ amendment.comment_ends.strftime('%d %B %Y') }}.</p>
+{% else %}<p class="prose">The evidence period for this event has closed.</p>{% endif %}
 <form method="post" class="card">{{ csrf_field(request) }}
   <div class="row">
     <label>Your submission is
