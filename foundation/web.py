@@ -28,7 +28,7 @@ from .auth_core import (
 )
 from .config import ROOT, settings
 from .db import SessionLocal, audit, init_db, utcnow
-from .mail import send_email
+from .mail import EmailError, send_email
 from .models import ROLES, ApiKey, AuditEvent, Job, User
 from .security import (
     SecurityMiddleware, client_ip, csrf_field, csrf_protect, email_limiter, hash_password, login_limiter,
@@ -156,10 +156,13 @@ def reset_request(request: Request, email: str = Form(...)):
             user = get_user_by_email(s, email)
         if user and user.active:
             token = issue_token("reset", email, hours=1)
-            send_email(email, f"Reset your {settings.app_name} password",
-                       f"Someone asked to reset the password for {email} on {settings.app_name}.\n\n"
-                       f"To choose a new password, open this link within one hour:\n{settings.base_url}/reset/{token}\n\n"
-                       "If you did not ask for this, ignore this email; your password has not changed.")
+            try:
+                send_email(email, f"Reset your {settings.app_name} password",
+                           f"Someone asked to reset the password for {email} on {settings.app_name}.\n\n"
+                           f"To choose a new password, open this link within one hour:\n{settings.base_url}/reset/{token}\n\n"
+                           "If you did not ask for this, ignore this email; your password has not changed.")
+            except EmailError as e:  # the page must look the same either way, so the failure is only logged
+                log.error("password reset email not sent: %s", e)
     return render(request, "auth/reset_request.html", {"sent": True})
 
 
@@ -276,9 +279,12 @@ def admin_invite(request: Request, email: str = Form(...), role: str = Form("mem
         raise HTTPException(400, "Choose a role and a valid email address.")
     token = issue_token("invite", email, hours=24 * 7, role=role, created_by=user.id)
     link = f"{settings.base_url}/register?token={token}"
-    send_email(normalise_email(email), f"You are invited to {settings.app_name}",
-               f"{user.name or user.email} invited you to {settings.app_name} as {role}.\n\n"
-               f"Create your account within seven days:\n{link}\n")
+    try:
+        send_email(normalise_email(email), f"You are invited to {settings.app_name}",
+                   f"{user.name or user.email} invited you to {settings.app_name} as {role}.\n\n"
+                   f"Create your account within seven days:\n{link}\n")
+    except EmailError as e:  # the administrator still sees the link below and can pass it on
+        log.error("invitation email not sent: %s", e)
     with SessionLocal() as s:
         audit(s, "user.invite", user.id, target=normalise_email(email), role=role)
         s.commit()

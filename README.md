@@ -21,7 +21,7 @@ The working website for the Cornerstone Livelihood Restoration Act, a Galinsky 2
 
 Code: `app/rules.py` (the Act's tests and formulas), `app/models.py`, `app/views/` (one module per role), `app/seed.py` (the example world), `tests/test_cornerstone.py`, `tests/test_act_procedures.py`.
 
-**Where it runs.** https://the-cornerstone.onrender.com, in preview mode. The web service is `the-cornerstone` on Render (Docker, Ohio, deploys automatically from `main`) and the database is the Neon project "The Cornerstone" (us-east-2); the app reaches it through the pooled connection and runs migrations over the direct one. The first administrator's email and password are the `APP_ADMIN_EMAIL` and `APP_ADMIN_PASSWORD` values on the Render service's Environment page; change the password at `/account` after the first sign-in, then set the switch password at `/site`. The service is on Render's free plan, which sleeps after 15 minutes without visitors (the next visit takes up to a minute) and cannot send email; `render.yaml` names the smallest paid plan, which removes both limits. Email needs the `APP_SMTP_*` settings in `.env.example`; until they are set, password-reset and notification emails are only written to the log.
+**Where it runs.** https://the-cornerstone.onrender.com, in preview mode. The web service is `the-cornerstone` on Render (Docker, Ohio, deploys automatically from `main`) and the database is the Neon project "The Cornerstone" (us-east-2); the app reaches it through the pooled connection and runs migrations over the direct one. The first administrator's email and password are the `APP_ADMIN_EMAIL` and `APP_ADMIN_PASSWORD` values on the Render service's Environment page; change the password at `/account` after the first sign-in, then set the switch password at `/site`. The service is on Render's free plan, which sleeps after 15 minutes without visitors (the next visit takes up to a minute). Email works on the free plan through an HTTPS email API: set `APP_EMAIL_BACKEND=http`, `APP_EMAIL_API_URL` (for example `https://api.resend.com/emails`), `APP_EMAIL_API_KEY` and `APP_EMAIL_FROM` on the Render service. Until they are set, password-reset and notification emails are only written to the log.
 
 **Tests.** `python -m pytest -q` runs the Act's rules, every role's desk, the whole program end to end, the switch, and the procedures of sections 2(c), 5(c) and 7(a) (`tests/test_act_procedures.py`), cohorts and consortia (`tests/test_cohorts_consortia.py`), section 9 (`tests/test_section9.py`), and enforcement, rescission, appeals and larger bodies (`tests/test_enforcement.py`). CI runs them on SQLite and Postgres and checks that the Docker image builds and starts.
 
@@ -42,7 +42,7 @@ The shared base for every Galinsky Labs, Galinsky Arts, Galinsky 2028 and Justic
 | Data | SQLite for development, Postgres (Neon) in production, with Neon's pooled and direct connections handled; migrations applied automatically at start-up, with Foundation's tables and the project's tables on separate migration branches |
 | Files | `foundation.blobstore` keeps uploaded files in the database, because Render erases the server's disk on every deploy |
 | Background work | `foundation.jobs`: queued jobs with automatic retries and repeating tasks, run by one worker inside the web process |
-| Email | Console backend for development, SMTP for production |
+| Email | Console backend for development; an HTTPS email API (Resend, Postmark or SendGrid format, port 443) or SMTP for production |
 | AI | `foundation.llm`: Claude calls with per-call cost records and a monthly spend cap, and a mock provider for tests |
 | Interface | A plain, responsive, light/dark base layout branded by `APP_NAME` and `APP_BRAND_COLOR`; project templates override Foundation's |
 | Deployment | Dockerfile, `render.yaml`, health check at `/health`, CI on both SQLite and Postgres |
@@ -124,7 +124,7 @@ git fetch foundation && git merge foundation/main
    - `APP_DATABASE_URL` and `APP_DATABASE_URL_DIRECT` set to the two Neon connection strings;
    - `APP_ADMIN_EMAIL` and `APP_ADMIN_PASSWORD` for the first sign-in;
    - `APP_TRUST_PROXY=true`.
-3. For email, set `APP_EMAIL_BACKEND=smtp` and the `APP_SMTP_*` values. A Gmail account needs 2-step verification and an App Password. Render's free services cannot send email on ports 465 or 587.
+3. For email on any plan, set `APP_EMAIL_BACKEND=http`, `APP_EMAIL_API_URL` (for example `https://api.resend.com/emails`), `APP_EMAIL_API_KEY` and `APP_EMAIL_FROM` (an address on a domain verified with the provider). SMTP (`APP_EMAIL_BACKEND=smtp` and the `APP_SMTP_*` values) also works, but Render's free services block ports 465 and 587.
 
 Render's free plan works for testing, but a free service sleeps after 15 minutes without traffic, which also pauses background jobs. The smallest paid plan keeps it running.
 
