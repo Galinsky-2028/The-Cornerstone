@@ -13,11 +13,11 @@ from foundation.models import User
 
 from ..models import (
     FUND_CATEGORIES, RESTORATION_CHECKS, SUBPOENA_STATUSES, Association, Claim, Compact, Event, FundAdvance, Membership,
-    Ballot, ClaimRescission, Restoration, Subpoena,
+    SCOPE_FIELDS, Ballot, ClaimRescission, EventAmendment, Restoration, Subpoena,
 )
 from ..program import founding_units, is_preview, require_not_recused, require_program_role, visible
 from ..rules import (
-    ENROLLMENT_DAYS, MAX_EXTENSION_DAYS, NOT_REOPEN_GROUNDS, REOPEN_GROUNDS, days_from, extension_problem,
+    COMMENT_PERIOD_DAYS, ENROLLMENT_DAYS, MAX_EXTENSION_DAYS, NOT_REOPEN_GROUNDS, REOPEN_GROUNDS, days_from, extension_problem,
     preopening_outcome, reopen_problem,
 )
 from .common import clean, go, page, parse_date, preview_only, to_int
@@ -65,7 +65,8 @@ def event_review(request: Request, ref: str, user: User = Depends(labor)):
         e = _event(s, ref)
         s.commit()
         subpoenas = s.scalars(select(Subpoena).where(Subpoena.event_id == e.id).order_by(Subpoena.id)).all()
-        return page(request, "labor/event.html", {"e": e, "comments": list(e.comments), "today": date.today(),
+        amendments = s.scalars(select(EventAmendment).where(EventAmendment.event_id == e.id).order_by(EventAmendment.id)).all()
+        return page(request, "labor/event.html", {"amendments": amendments,"e": e, "comments": list(e.comments), "today": date.today(),
                                                    "subpoenas": subpoenas, "max_extension": MAX_EXTENSION_DAYS,
                                                    "subpoena_statuses": SUBPOENA_STATUSES})
 
@@ -532,3 +533,89 @@ def large_body(request: Request, ref: str, findings: str = Form(...), user: User
         audit(s, "association.large_body", user.id, target=ref)
         s.commit()
     return go(f"/app/associations/{ref}", "Approved: the founding roll may exceed 2,500 units.")
+
+
+# --------------------------------------------------------------------------
+# Section 2(e): amending a certification's scope on new evidence
+# --------------------------------------------------------------------------
+DATE_SCOPE = ("causal_start", "causal_end", "first_separation")
+
+
+def _scope_of(e: Event) -> dict:
+    return {f: (getattr(e, f).isoformat() if getattr(e, f) else "") if f in DATE_SCOPE else (getattr(e, f) or "")
+            for f in SCOPE_FIELDS}
+
+
+@router.post("/events/{ref}/amendments")
+async def amendment_propose(request: Request, ref: str, user: User = Depends(labor)):
+    """Publish a proposed amendment. Notice, the evidence period and findings follow the certification procedure."""
+    form = await request.form()
+    with SessionLocal() as s:
+        e = _event(s, ref)
+        if e.status != "certified":
+            raise HTTPException(400, "Only a certified event's scope can be amended.")
+        if s.scalar(select(EventAmendment.id).where(EventAmendment.event_id == e.id, EventAmendment.status == "comment_period")):
+            raise HTTPException(400, "An amendment of this event is already open for evidence.")
+        evidence = clean(str(form.get("new_evidence", "")))
+        if len(evidence) < 40:
+            raise HTTPException(400, "Describe the new evidence that supports the amendment.")
+        current = _scope_of(e)
+        proposed = {}
+        for f in SCOPE_FIELDS:
+            raw = str(form.get(f, current[f])).strip()
+            if f in DATE_SCOPE:
+                raw = parse_date(raw, f.replace("_", " ")).isoformat() if raw else ""
+            proposed[f] = clean(raw)
+        for f in ("occupations", "worksites", "geography", "causal_mechanism", "acceptable_proof", "causal_start", "first_separation"):
+            if not proposed[f]:
+                raise HTTPException(400, "An amended certification must still state the " + f.replace("_", " ") + ".")
+        if proposed == current:
+            raise HTTPException(400, "The proposal does not change the scope.")
+        s.add(EventAmendment(event_id=e.id, new_evidence=evidence, proposed=proposed, proposed_by=user.id, is_demo=e.is_demo,
+                             comment_ends=days_from(date.today(), COMMENT_PERIOD_DAYS)))
+        audit(s, "event.amendment_propose", user.id, target=ref)
+        s.commit()
+    return go(f"/labor/events/{ref}#amendments", f"The proposed amendment is public. Anyone may submit evidence or responses for "
+                                                 f"{COMMENT_PERIOD_DAYS} days; affected parties should be notified directly.")
+
+
+def _amendment(s, aid: int) -> EventAmendment:
+    a = s.get(EventAmendment, aid)
+    if a is None or a.is_demo != is_preview() or a.status != "comment_period":
+        raise HTTPException(404)
+    return a
+
+
+@router.post("/amendments/{aid}/end-evidence")
+def amendment_end_evidence(request: Request, aid: int, user: User = Depends(labor)):
+    preview_only()
+    with SessionLocal() as s:
+        a = _amendment(s, aid)
+        a.comment_ends = date.today()
+        ref = s.get(Event, a.event_id).ref
+        audit(s, "event.amendment_end_evidence_preview", user.id, target=ref)
+        s.commit()
+    return go(f"/labor/events/{ref}#amendments", "Preview: the evidence period for the amendment has been ended early.")
+
+
+@router.post("/amendments/{aid}/decide")
+def amendment_decide(request: Request, aid: int, decision: str = Form(...), findings: str = Form(...), user: User = Depends(labor)):
+    if decision not in ("adopt", "reject"):
+        raise HTTPException(400)
+    with SessionLocal() as s:
+        a = _amendment(s, aid)
+        e = s.get(Event, a.event_id)
+        if date.today() < a.comment_ends:
+            raise HTTPException(400, f"The evidence period runs until {a.comment_ends:%d %B %Y}.")
+        if len(findings.strip()) < 40:
+            raise HTTPException(400, "A reasoned decision with written findings is required.")
+        if decision == "adopt":
+            a.previous = _scope_of(e)
+            for f, v in a.proposed.items():
+                setattr(e, f, (date.fromisoformat(v) if v else None) if f in DATE_SCOPE else v)
+        a.status, a.findings, a.decided_by, a.decided_on = ("adopted" if decision == "adopt" else "rejected"), clean(findings), user.id, date.today()
+        audit(s, f"event.amendment_{a.status}", user.id, target=e.ref)
+        s.commit()
+        ref = e.ref
+    return go(f"/exchange/events/{ref}", "Amendment adopted. The certification's scope is updated and the change is on the register."
+              if decision == "adopt" else "Amendment rejected with written findings; the scope is unchanged.")

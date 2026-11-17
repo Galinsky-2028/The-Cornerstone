@@ -43,6 +43,18 @@
   <p class="small muted">Records produced are not published.</p>
 </section>
 {% endif %}
+{% set scope_labels = {'occupations': 'Covered occupations', 'worksites': 'Worksites or enterprises', 'geography': 'Geography', 'causal_mechanism': 'Causal mechanism', 'acceptable_proof': 'Acceptable individual proof', 'causal_start': 'Causal period begins', 'causal_end': 'Causal period ends', 'first_separation': 'First proven separation'} %}
+{% if amendments %}
+<section class="card" id="amendments"><h2>Scope amendments (section 2(e))</h2>
+  {% for a in amendments %}
+  <div class="ballot"><p><span class="status {{ a.status }}">{{ a.status|label }}</span> · proposed {{ a.proposed_on.strftime('%d %b %Y') }}{% if a.status == 'comment_period' %} · evidence and responses until {{ a.comment_ends.strftime('%d %b %Y') }}{% endif %}</p>
+    <p><strong>New evidence:</strong> {{ a.new_evidence }}</p>
+    <dl class="kv small">{% for f, v in a.proposed.items() %}{% if not a.previous or a.previous.get(f) != v %}<dt>{{ scope_labels[f] }}</dt><dd>{{ v or 'open' }}{% if a.previous %} <span class="muted">(was: {{ a.previous.get(f) or 'open' }})</span>{% endif %}</dd>{% endif %}{% endfor %}</dl>
+    {% if a.findings %}<p class="small"><strong>Findings:</strong> {{ a.findings }}</p>{% endif %}
+    {% if a.status == 'comment_period' %}<p><a class="btn small" href="/app/events/{{ e.ref }}/respond">Submit evidence or a response</a></p>{% endif %}</div>
+  {% endfor %}
+</section>
+{% endif %}
 <section class="card">
   <h2>Evidence and responses ({{ comments|length }})</h2>
   {% for c in comments %}<p><strong>{{ c.author_name }}</strong>{% if c.organization %}, {{ c.organization }}{% endif %} · <span class="small">{{ c.position }} · {{ c.created_at.strftime('%d %b %Y') }}</span><br>{{ c.body }}</p>{% else %}<p class="muted">None yet.</p>{% endfor %}

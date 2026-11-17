@@ -127,7 +127,15 @@ def comment_form(request: Request, ref: str, user: User = Depends(require_user))
         e = s.scalar(visible(select(Event), Event).where(Event.ref == ref))
         if e is None:
             raise HTTPException(404)
-        return page(request, "worker/comment.html", {"e": e})
+        return page(request, "worker/comment.html", {"e": e, "amendment": _open_amendment(s, e)})
+
+
+def _open_amendment(s, e: Event):
+    """s.2(e): while a proposed scope amendment is open, anyone may submit evidence or responses on it."""
+    from ..models import EventAmendment
+
+    return s.scalar(select(EventAmendment).where(EventAmendment.event_id == e.id, EventAmendment.status == "comment_period",
+                                                 EventAmendment.comment_ends >= date.today()))
 
 
 @router.post("/app/events/{ref}/respond")
@@ -139,10 +147,12 @@ def comment_submit(request: Request, ref: str, position: str = Form("evidence"),
         e = s.scalar(visible(select(Event), Event).where(Event.ref == ref))
         if e is None:
             raise HTTPException(404)
-        if e.status != "comment_period":
+        amendment = _open_amendment(s, e)
+        if e.status != "comment_period" and amendment is None:
             raise HTTPException(400, "The evidence period for this petition has closed.")
         s.add(EventComment(event_id=e.id, author_name=user.name or "A participant", organization=clean(organization, 200),
-                           position=position, body=clean(body), user_id=user.id, is_demo=is_preview()))
+                           position=position, body=clean(body), user_id=user.id, is_demo=is_preview(),
+                           amendment_id=amendment.id if amendment is not None and e.status != "comment_period" else None))
         audit(s, "event.comment", user.id, target=ref)
         s.commit()
     return go(f"/exchange/events/{ref}", "Your submission is on the public record.")

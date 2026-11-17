@@ -142,6 +142,30 @@ class Subpoena(Base):
     is_demo: Mapped[bool] = demo_col()
 
 
+SCOPE_FIELDS = ("occupations", "worksites", "geography", "causal_mechanism", "acceptable_proof",
+                "causal_start", "causal_end", "first_separation")
+
+
+class EventAmendment(Base):
+    """s.2(e): Labor may amend a certification's scope on new evidence through the same notice and findings procedure:
+    a public proposal, at least 60 days for evidence and responses, and a reasoned decision with written findings."""
+
+    __tablename__ = "cs_event_amendments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("cs_events.id", ondelete="CASCADE"), index=True)
+    new_evidence: Mapped[str] = mapped_column(Text)
+    proposed: Mapped[dict] = mapped_column(JSON, default=dict)  # the proposed scope, field by field
+    previous: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # the scope it replaced, kept for the register
+    status: Mapped[str] = mapped_column(String(20), default="comment_period")  # comment_period | adopted | rejected
+    comment_ends: Mapped[date] = mapped_column(Date)
+    findings: Mapped[str] = mapped_column(Text, default="")
+    proposed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    proposed_on: Mapped[date] = mapped_column(Date, default=date.today)
+    decided_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    decided_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_demo: Mapped[bool] = demo_col()
+
+
 class EventComment(Base):
     __tablename__ = "cs_event_comments"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -149,6 +173,7 @@ class EventComment(Base):
     author_name: Mapped[str] = mapped_column(String(200))
     organization: Mapped[str] = mapped_column(String(200), default="")
     position: Mapped[str] = mapped_column(String(20), default="evidence")  # evidence | support | oppose
+    amendment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # a response to a proposed scope amendment
     body: Mapped[str] = mapped_column(Text)
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

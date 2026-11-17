@@ -67,7 +67,10 @@ def event_public(request: Request, ref: str):
         certified = s.scalar(select(func.count()).select_from(Claim).where(
             Claim.event_id == e.id, Claim.status.in_(["certified", "remedied"]))) or 0
         subpoenas = s.scalars(select(Subpoena).where(Subpoena.event_id == e.id).order_by(Subpoena.id)).all()
-        return page(request, "exchange/event.html", {"e": e, "comments": comments, "certified": certified,
+        from ..models import EventAmendment
+
+        amendments = s.scalars(select(EventAmendment).where(EventAmendment.event_id == e.id).order_by(EventAmendment.id)).all()
+        return page(request, "exchange/event.html", {"amendments": amendments, "e": e, "comments": comments, "certified": certified,
                                                        "subpoenas": subpoenas})
 
 
