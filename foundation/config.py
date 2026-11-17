@@ -80,13 +80,17 @@ class Settings:
     database_url_direct: str = field(default_factory=lambda: env("APP_DATABASE_URL_DIRECT"))
 
     # --- email -----------------------------------------------------------------------------------
-    email_backend: str = field(default_factory=lambda: env("APP_EMAIL_BACKEND", "console"))  # console | smtp
+    email_backend: str = field(default_factory=lambda: env("APP_EMAIL_BACKEND", "console"))  # console | smtp | http
     email_from: str = field(default_factory=lambda: env("APP_EMAIL_FROM"))
     smtp_host: str = field(default_factory=lambda: env("APP_SMTP_HOST"))
     smtp_port: int = field(default_factory=lambda: env_int("APP_SMTP_PORT", 587))
     smtp_user: str = field(default_factory=lambda: env("APP_SMTP_USER"))
     smtp_password: str = field(default_factory=lambda: env("APP_SMTP_PASSWORD"))
     smtp_starttls: bool = field(default_factory=lambda: env_bool("APP_SMTP_STARTTLS", True))
+    # HTTPS email API (port 443; works on hosts that block SMTP ports, such as Render's free plan)
+    email_api_url: str = field(default_factory=lambda: env("APP_EMAIL_API_URL"))  # e.g. https://api.resend.com/emails
+    email_api_key: str = field(default_factory=lambda: env("APP_EMAIL_API_KEY"))
+    email_api_style: str = field(default_factory=lambda: env("APP_EMAIL_API_STYLE", ""))  # resend | postmark | sendgrid; blank = from the URL
 
     # --- AI (optional) ---------------------------------------------------------------------------
     llm_provider: str = field(default_factory=lambda: env("APP_LLM_PROVIDER", "anthropic"))  # anthropic | mock
